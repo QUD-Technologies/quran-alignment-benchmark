@@ -205,6 +205,9 @@ def test_cpu_gpu_profiles_replace_independently_and_share_ownership(client, meta
         ids[profile] = result.json()['id']
     rows = client.get('/api/leaderboard').json()['rows']
     assert {r['display_name'] for r in rows} == {'Example System (CPU)', 'Example System (GPU)'}
+    assert all(r['task'] == 'alignment' and r['corpus_version'] == 'v1' for r in rows)
+    assert all(r['recording_count'] == len(cases) and r['scorer_version'] for r in rows)
+    assert all('email' not in r and 'predictions' not in r for r in rows)
     metadata['hardware_class'] = 'cpu'
     p = preview(client, metadata, subs).json()
     assert p['replacement']

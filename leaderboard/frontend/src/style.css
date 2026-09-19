@@ -27,3 +27,4 @@
 .task-switcher{margin-bottom:24px;max-width:max-content}.submission-layout section>fieldset{margin-bottom:18px}
 
 .batch-results{display:grid;gap:20px;margin:20px 0}.task-result{border:1px solid var(--border);border-radius:8px;padding:20px}.task-result h3{margin:0 0 8px}.task-result .preview-scores{margin:18px 0 0}.task-result h3 .badge{margin-left:12px;font-size:11px}
+.fact-note{color:var(--muted);font-size:11px;line-height:1.6}

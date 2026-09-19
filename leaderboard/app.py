@@ -407,6 +407,9 @@ def create_app(cases_override=None, store_override=None):
                 rows.append({'id': record['id'], **meta.public(), 'synthetic': record.get('synthetic', False),
                              'display_name': meta.system + (f' ({profile.upper()})' if profile else ''),
                              'submitted_at': record['created_at'],
+                             'task': task, 'corpus_version': record['corpus_version'],
+                             'recording_count': len(record['predictions']),
+                             'scorer_version': record['scorer_version'],
                              'scores': filtered(record['id'], selected)})
         rows.sort(key=lambda r: (-(r['scores'][PRIMARY[task]] or 0), r['system'].casefold()))
         for row in rows:
