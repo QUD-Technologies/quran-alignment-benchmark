@@ -252,10 +252,10 @@ def alignment_submission(case: Any, record: dict[str, Any], diagnostics: Counter
             reference = canonical_special(row.get("special_type") or row.get("ref_from"))
             if reference is None:
                 diagnostics["unsupported_special_segments"] += 1
-        elif row.get("wrap_word_ranges"):
-            diagnostics["wraparound_segments_set_null"] += 1
         else:
             reference = span(row.get("ref_from"), row.get("ref_to"))
+            if row.get("wrap_word_ranges"):
+                diagnostics["wraparound_segments_primary_span"] += 1
             if row.get("repeated_ranges"):
                 diagnostics["repeated_range_segments_primary_span"] += 1
         adapted.append({
@@ -491,7 +491,7 @@ def render_report(evidence: dict[str, Any], path: Path) -> None:
 <table><thead><tr><th>Path</th><th>Sum request time</th><th>Median request</th><th>Longest request</th><th>Observed latency RTF</th></tr></thead><tbody>{perf_rows}</tbody></table>
 <div class="callout warn"><b>Do not read the latency RTF as isolated model speed.</b> All requests shared one concurrent Space queue, so queue order makes Large appear faster in aggregate. These numbers describe this batch's end-to-end hosted latency, including upload and waiting.</div>
 <h2 id="method"><span class="hn">6</span>Method and adapters</h2><p class="lead">The exact projections used to translate RAS responses into the benchmark's three strict schemas.</p>
-<ul class="clean"><li><b>Corpus.</b> <code>{DATASET_ID}</code>, config <code>v1</code>, revision <code>{DATASET_SHA}</code>; all 16 recordings and {performance_data['audio_seconds']/60:.1f} minutes.</li><li><b>Concurrency.</b> Both model batches and all timing calls were submitted concurrently; the Space owned scheduling and queueing.</li><li><b>Alignment.</b> Quran rows map <code>ref_from</code>/<code>ref_to</code> to one benchmark span. Basmala and Isti'adha map to their benchmark class token. Unrepresentable wraparound rows become null claims rather than inventing a contiguous span.</li><li><b>Segmentation.</b> Public RAS segment times become speech intervals. Any overlap is split at its midpoint solely to satisfy the benchmark's non-overlap schema.</li><li><b>Timing.</b> Reviewed segment bounds and supplied references are sent to <code>/timestamps</code>; returned times are already clip-relative. Missing or partial results become null word timings in their supplied positions.</li><li><b>Runtime.</b> CPU was explicitly requested. The Space does not expose its CPU model, so hardware is reported as hosted Space CPU.</li></ul>
+<ul class="clean"><li><b>Corpus.</b> <code>{DATASET_ID}</code>, config <code>v1</code>, revision <code>{DATASET_SHA}</code>; all 16 recordings and {performance_data['audio_seconds']/60:.1f} minutes.</li><li><b>Concurrency.</b> Both model batches and all timing calls were submitted concurrently; the Space owned scheduling and queueing.</li><li><b>Alignment.</b> Quran rows map the API's explicit <code>ref_from</code>/<code>ref_to</code> primary range to one benchmark span. Basmala and Isti'adha map to their benchmark class token. When one RAS row also reports internal repeat/wrap ranges, QAB cannot represent them without internal timestamps; the primary span is retained and QAB's repeat metric records the lost occurrences.</li><li><b>Segmentation.</b> Public RAS segment times become speech intervals. Any overlap is split at its midpoint solely to satisfy the benchmark's non-overlap schema.</li><li><b>Timing.</b> Reviewed segment bounds and supplied references are sent to <code>/timestamps</code>; returned times are already clip-relative. Missing or partial results become null word timings in their supplied positions.</li><li><b>Runtime.</b> CPU was explicitly requested. The Space does not expose its CPU model, so hardware is reported as hosted Space CPU.</li></ul>
 <div class="callout"><b>Adapter diagnostics.</b><pre>{diagnostics}</pre></div>
 <hr><p class="footnote">Generated from retained raw API responses and the repository's own <code>qab.report.evaluate</code> / <code>evaluate_task</code> scorers. Full machine-readable evidence is adjacent as <code>results.json</code>.</p>
 </div></body></html>"""
