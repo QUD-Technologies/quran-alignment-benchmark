@@ -93,10 +93,10 @@ def request_json(method: str, url: str, token: str | None, **kwargs: Any) -> dic
     return response.json()
 
 
-def create_batch(model: str, token: str | None) -> str:
+def create_batch(model: str, device: str, token: str | None) -> str:
     body = {
         "model_name": model,
-        "device": "CPU",
+        "device": device,
         "riwayah": "hafs",
         "pad_left_ms": 100,
         "pad_right_ms": 200,
@@ -129,6 +129,7 @@ def run_alignment_case(
     batch_id: str,
     run_dir: Path,
     token: str | None,
+    device: str = "CPU",
 ) -> dict[str, Any]:
     out = run_dir / "raw" / "alignment" / model.lower() / f"{case.id}.json"
     if out.exists():
@@ -153,7 +154,7 @@ def run_alignment_case(
             record = {
                 "case_id": case.id,
                 "model": model,
-                "requested_device": "CPU",
+                "requested_device": device,
                 "elapsed_s": time.perf_counter() - started,
                 "response": body,
             }
@@ -503,6 +504,7 @@ def main() -> int:
     parser.add_argument("--parquet", type=Path, required=True)
     parser.add_argument("--out", type=Path, default=ROOT / ".local" / "ras-benchmark" / "run")
     parser.add_argument("--workers", type=int, default=48)
+    parser.add_argument("--device", choices=("CPU", "GPU"), default="CPU")
     parser.add_argument("--models", nargs="+", choices=tuple(MODELS), default=list(MODELS))
     parser.add_argument("--cases", nargs="+", help="run only these case IDs")
     parser.add_argument(
@@ -530,12 +532,22 @@ def main() -> int:
     health = request_json("GET", f"{SPACE}/health", token)
     if health.get("status") != "ok":
         raise RuntimeError(f"Space health check failed: {health}")
-    batch_ids = {model: create_batch(model, token) for model in args.models}
+    batch_ids = {model: create_batch(model, args.device, token) for model in args.models}
     jobs = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
         for model in args.models:
             for case in selected_cases:
-                jobs.append(pool.submit(run_alignment_case, case, model, batch_ids[model], args.out, token))
+                jobs.append(
+                    pool.submit(
+                        run_alignment_case,
+                        case,
+                        model,
+                        batch_ids[model],
+                        args.out,
+                        token,
+                        args.device,
+                    )
+                )
         for case in selected_cases:
             if not (args.out / "raw" / "timing" / f"{case.id}.json").exists():
                 jobs.append(pool.submit(run_timing_case, case, args.out, token))

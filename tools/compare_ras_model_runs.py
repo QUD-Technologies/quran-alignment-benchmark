@@ -107,7 +107,7 @@ def render(evidence: dict, path: Path) -> None:
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Tibyan align-v1 comparison</title>
 <style>:root{{--bg:#0f1115;--panel:#171a21;--ink:#e7ebf0;--muted:#9aa4b2;--line:#2a2f3a;--accent:#7c9cff}}*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,sans-serif}}main{{max-width:1100px;margin:auto;padding:52px 24px 100px}}h1{{font-size:38px;margin:0 0 10px}}h2{{margin-top:44px}}p{{color:var(--muted);max-width:78ch}}.callout{{background:var(--panel);border-left:3px solid var(--accent);padding:14px 18px;margin:22px 0}}table{{width:100%;border-collapse:collapse;display:block;overflow:auto}}th,td{{padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left}}th{{color:var(--muted);font-size:12px;text-transform:uppercase}}</style></head>
 <body><main><h1>Tibyan align-v1 vs R15/R7</h1><p>Direct QAB v1 comparison from retained responses produced by the same dev Space API and the repository scorer.</p>
-<div class="callout"><b>Coverage limit:</b> Tibyan Base completed all 16 cases. Tibyan Large completed 12; its isolated Fatir CPU call took 49.4 minutes, so the 24–80 minute remaining recordings cannot be evaluated reliably inside the API's one-hour request lifetime. Large comparisons therefore use the identical 12-case paired cohort. All five noisy cases are complete for all systems.</div>
+<div class="callout"><b>Coverage:</b> Every system completed all {evidence['cohorts']['All-model paired']['cases']} paired cases. The four previously missing Tibyan Large recordings were evaluated concurrently on the dev Space's dedicated A10G.</div>
 <div class="callout"><b>Wraparound adapter:</b> QAB accepts one increasing Quran span per timed segment. RAS can additionally return repeated or wraparound ranges inside a row without internal time boundaries. The adapter submits the API's explicit primary <code>ref_from</code>/<code>ref_to</code> span and leaves the extra occurrences unclaimed; QAB therefore scores the primary words while its repeat metric penalizes the lossy projection. Splitting the row proportionally would invent boundaries and is not done.</div>
 <h2>Cohort metrics</h2><table><thead><tr><th>Cohort</th><th>Cases</th><th>System</th><th>Words F1</th><th>Clean segments</th><th>Repeats F1</th><th>Segments F1</th><th>Boundaries F1</th></tr></thead><tbody>{''.join(cohort_rows)}</tbody></table>
 <h2>Noisy recordings</h2><table><thead><tr><th>Case</th><th>System</th><th>Words F1</th><th>Segments F1</th><th>Boundaries F1</th></tr></thead><tbody>{''.join(noisy_rows)}</tbody></table>
@@ -140,7 +140,7 @@ def main() -> int:
     noisy_ids = [case.id for case in cases if case.noisy and case.id in paired_ids]
     cohorts = {
         "Full Base (16)": ([systems[0], systems[2]], cases),
-        "Paired all-model (12)": (systems, [by_id[case_id] for case_id in paired_ids]),
+        "All-model paired": (systems, [by_id[case_id] for case_id in paired_ids]),
         "Noisy (5)": (systems, [by_id[case_id] for case_id in noisy_ids]),
     }
     evidence = {"cohorts": {}, "noisy_cases": {}}
