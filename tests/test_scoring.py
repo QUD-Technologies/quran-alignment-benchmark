@@ -364,12 +364,32 @@ def test_unmatched_class_tokens_in_quran_span_are_false_claims():
     assert r.claimed_words == 5 and r.matched_words == 1 and r.segments[0].false_claims == 4
 
 
-def test_basmala_confidence_consistency():
-    with pytest.raises(ValidationError):
-        sub([(0, 4, "Basmala"), (4, 11, span(1, 4, 10), 0.9)])
+def test_basmala_confidence_is_optional_and_ignored():
     case = make_case(chapter_words(1, 0, 10))
-    rep = _pooled(case, sub([(0, 4, "Basmala", 0.9), (4, 11, span(1, 4, 10), 0.9)]))
-    assert rep["confidence"]["segments"] == 2
+    without = _pooled(case, sub([(0, 4, "Basmala"), (4, 11, span(1, 4, 10), 0.9)]))
+    supplied = _pooled(case, sub([(0, 4, "Basmala", 0.1), (4, 11, span(1, 4, 10), 0.9)]))
+    assert without["confidence"] == supplied["confidence"]
+    assert supplied["confidence"]["segments"] == 1
+    assert supplied["cases"][0]["segments"][0]["confidence"] is None
+
+
+def test_basmala_confidence_alone_does_not_count_as_reported():
+    case = make_case([f"Basmala:{k}" for k in range(1, 5)])
+    rep = _pooled(case, sub([(0, 4, "Basmala", 0.9)]))
+    assert rep["confidence_reported"] is False
+    assert rep["confidence"]["state"] == "not_reported"
+
+
+def test_basmala_only_case_does_not_disable_confidence_for_other_cases():
+    formula = make_case([f"Basmala:{k}" for k in range(1, 5)], id="formula")
+    quran = make_case(chapter_words(CH, 0, 4), id="quran")
+    rep = evaluate([formula, quran], [
+        sub([(0, 4, "Basmala", 0.1)], "formula"),
+        sub([(0, 5, span(CH, 0, 4), 0.9)], "quran"),
+    ])
+    assert rep["confidence_reported"] is True
+    assert rep["confidence"]["segments"] == 1
+    assert rep["headline"]["trusted_coverage"] == 1
 
 
 def test_empty_submission_scores_zero_not_null():

@@ -5,7 +5,7 @@
   <p>The website supplies the recording ID from the filename and manages schema, scorer, corpus, and submission versions. You do not need <code>submission.json</code>. Existing files containing matching <code>case_id</code> and <code>schema_version: 1</code> are also accepted.</p>
   <h3>A complete file example</h3>
   <pre>{JSON.stringify({segments:[
-    {start_s:0.98,end_s:4.84,reference:'Basmala',confidence:0.95},
+    {start_s:0.98,end_s:4.84,reference:'Basmala'},
     {start_s:5.78,end_s:22.30,reference:'84:1:1-84:5:3',confidence:0.97},
     {start_s:23.42,end_s:33.12,reference:'84:6:1-84:6:8',confidence:0.99},
     {start_s:34.20,end_s:44.33,reference:'84:7:1-84:8:4',confidence:0.91},
@@ -27,7 +27,7 @@
   <h3>Timing and segmentation</h3>
   <ul><li><code>start_s</code> and <code>end_s</code> are finite numbers in seconds from the recording start, not milliseconds. Start must be at least 0 and end must be greater than start.</li><li>Order segments by <code>start_s</code>. Consecutive segments can overlap by at most 0.5 seconds. No segment may end beyond the recording duration plus the 1-second validation allowance.</li><li>Use your system's native granularity: per word, ayah, stop, or another grouping. Do not merge or split merely to imitate the reference segmentation.</li><li>Use a new timed segment for a repeated passage; one forward span cannot express two takes. An explicit <code>"segments": []</code> is valid if the system predicts nothing; it receives the corresponding score. A missing file is not an empty prediction.</li></ul>
   <h3>Optional confidence and runtime</h3>
-  <p><code>confidence</code> is the system's score from 0 to 1 for whether a segment is safe to use as supplied. Scores of at least 0.80 are green, 0.60 to below 0.80 are amber, and below 0.60 are red. Either every Quran-span and Basmala segment includes it or none does, consistently across all recordings. Confidence on Isti'adha and null segments is ignored.</p>
+  <p><code>confidence</code> is the system's score from 0 to 1 for whether a segment is safe to use as supplied. Scores of at least 0.80 are green, 0.60 to below 0.80 are amber, and below 0.60 are red. Either every Quran-span segment includes it or none does, consistently across all recordings. Confidence on Basmala, Isti'adha, and null segments is ignored.</p>
   <p><code>runtime_seconds</code> is the total positive processing time for that recording. Supply it for every recording or omit it everywhere. If included, choose the CPU or GPU run profile and describe the hardware in System details. Remove both optional fields if you do not report them.</p>
   <h3>Validation, preview, and publication</h3>
   <p>Files validate as you upload. Each recording shows its own status and actionable errors; submission-wide consistency checks appear below. Unknown fields, invalid references, duplicates within an upload, and unknown recording IDs are rejected. Drop a corrected file with the same ID to replace it.</p>

@@ -86,6 +86,7 @@ def test_publish_auth_privacy_replacement_and_subset_parity(client, metadata, ca
         result = client.get('/api/leaderboard', params=[('ids', i) for i in ids])
         assert result.status_code == 200
         row = result.json()['rows'][0]
+        assert row['scorer_version'] == '0.2.1'
         direct = evaluate([c for c in cases if c.id in ids], [s for s in subs if s.case_id in ids],
                           Metadata(**metadata).scorer_meta())
         assert row['scores'] == direct['pooled']

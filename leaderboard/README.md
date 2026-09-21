@@ -30,7 +30,7 @@ Public endpoints explicitly project public fields; they do not return full score
 
 ## Corpus and scoring updates
 
-`corpora.json` selects the corpus version/config and its Parquet path. All fields are loaded from the current dataset, with a 60-second server refresh cache and no commit pin. Keep prior entries for historical browsing. Scoring currently supports v1 with scorer 0.2.0. Alignment confidence is segment-native: green is at least 0.80, amber is 0.60 to below 0.80, and red is below 0.60; the board shows Trusted coverage and Unsafe green. Metrics content is versioned in source alongside the scorer. Alignment, waqf segmentation, and word timing have separate scorers and leaderboard views.
+`corpora.json` selects the corpus version/config and its Parquet path. All fields are loaded from the current dataset, with a 60-second server refresh cache and no commit pin. Keep prior entries for historical browsing. Scoring currently supports v1 with scorer 0.2.1. Alignment confidence is segment-native: green is at least 0.80, amber is 0.60 to below 0.80, and red is below 0.60; the board shows Trusted coverage and Unsafe green. Confidence on explicit Basmala, Isti'adha, and null segments is ignored. Metrics content is versioned in source alongside the scorer. Alignment, waqf segmentation, and word timing have separate scorers and leaderboard views.
 
 ## Checks
 

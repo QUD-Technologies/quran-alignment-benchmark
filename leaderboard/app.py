@@ -122,7 +122,7 @@ def errors(exc):
             if 'segment end must follow' in message:
                 message += '. Set end_s greater than start_s; times are seconds from the recording start.'
             if 'confidence is all-or-nothing' in message:
-                message += '. Add confidence to every Quran-span and Basmala segment, or remove it from all of them.'
+                message += '. Add confidence to every Quran-span segment, or remove it from all of them.'
             if 'overlap by more' in message:
                 match = re.search(r'segments (\d+) and (\d+)', message)
                 if match:
@@ -208,7 +208,8 @@ def validate_files(files, cases, meta):
     overall = []
     subs = list(valid.values())
     runtimes = [getattr(s, 'runtime_seconds', None) is not None for s in subs]
-    confidence = [s.confidence_reported for s in subs if any(seg.may_claim_quran for seg in s.segments)] if task == 'alignment' else []
+    confidence = [s.confidence_reported for s in subs
+                  if any(seg.confidence_eligible for seg in s.segments)] if task == 'alignment' else []
     if any(runtimes) and not all(runtimes):
         overall.append('Runtime must be provided for every recording or none.')
     if any(runtimes) and (not meta.hardware_class or not meta.hardware.strip()):
@@ -440,7 +441,7 @@ def create_app(cases_override=None, store_override=None):
                              'submitted_at': record['created_at'],
                              'task': task, 'corpus_version': record['corpus_version'],
                              'recording_count': len(record['predictions']),
-                             'scorer_version': record['scorer_version'],
+                             'scorer_version': __version__ if task == 'alignment' else record['scorer_version'],
                              'scores': filtered(record['id'], selected)})
         rows.sort(key=lambda r: (-(r['scores'][PRIMARY[task]] or 0), r['system'].casefold()))
         for row in rows:

@@ -209,7 +209,9 @@ def evaluate(cases: list[Case], submissions: list[Submission], meta: SubmissionM
     runtime_reported = all(by_case[c.id].runtime_seconds is not None for c in cases)
     if runtime_reported and (meta is None or meta.hardware_class is None):
         raise ValueError("runtime_seconds is reported but submission.json carries no hardware_class")
-    confidence_reported = all(by_case[c.id].confidence_reported for c in cases)
+    confidence_cases = [by_case[c.id] for c in cases
+                        if any(seg.confidence_eligible for seg in by_case[c.id].segments)]
+    confidence_reported = bool(confidence_cases) and all(sub.confidence_reported for sub in confidence_cases)
     scores = []
     for case in cases:
         s = score_case(case, by_case[case.id])

@@ -216,7 +216,8 @@ def score_case(case: Case, submission: Submission) -> CaseScore:
             index=j, reference=seg.reference, lane=seg_lane, claim_words=claim_words,
             content_words=len(content[j]), matched=len(seg_matches[j]), matched_quran=matched_quran,
             false_claims=claim_words - matched_quran, unaccounted=unaccounted, clean=clean,
-            confidence=seg.confidence if seg_lane == "quran" else None, non_quran_overlap_s=nq_overlap))
+            confidence=(seg.confidence if seg_lane == "quran" and seg.reference != refs.BASMALA else None),
+            non_quran_overlap_s=nq_overlap))
 
     truth_anchors = _truth_repeat_anchors(tokens, is_quran)
     pred_anchors = _predicted_repeat_anchors(lane, seg_claim_tokens, quran_lane_tokens)
@@ -233,10 +234,10 @@ def score_case(case: Case, submission: Submission) -> CaseScore:
     conf_segments: list[tuple[float, int, bool]] = []
     if submission.confidence_reported:
         for j, s in enumerate(seg_scores):
-            if s.lane != "quran":
+            if s.lane != "quran" or segments[j].reference == refs.BASMALA:
                 continue
             if segments[j].confidence is None:
-                raise ValueError(f"{case.id}: Quran-claiming segment {j} carries no confidence")
+                raise ValueError(f"{case.id}: Quran-span segment {j} carries no confidence")
             duration = segments[j].end_s - segments[j].start_s
             critical = s.false_claims > 0 and s.non_quran_overlap_s * 2 > duration
             conf_segments.append((segments[j].confidence, int(s.clean), critical))

@@ -132,6 +132,11 @@ class Segment(Strict):
         """A span or `Basmala` can be Quran-claiming once matched (SPEC 4.2); Isti'adha and null cannot."""
         return refs.is_span(self.reference) or self.reference == refs.BASMALA
 
+    @property
+    def confidence_eligible(self) -> bool:
+        """Only span references participate in consumer-confidence scoring (SPEC 4.9)."""
+        return refs.is_span(self.reference)
+
 
 class Submission(Strict):
     schema_version: Literal[1] = SCHEMA_VERSION_SUBMISSION
@@ -146,14 +151,14 @@ class Submission(Strict):
                 raise ValueError(f"segments must be ordered by start_s (segment {i})")
             if left.end_s - right.start_s > MAX_OVERLAP_S + 1e-9:
                 raise ValueError(f"segments {i - 1} and {i} overlap by more than {MAX_OVERLAP_S} s")
-        with_conf = [s.confidence is not None for s in self.segments if s.may_claim_quran]
+        with_conf = [s.confidence is not None for s in self.segments if s.confidence_eligible]
         if any(with_conf) and not all(with_conf):
-            raise ValueError("confidence is all-or-nothing across span and Basmala segments")
+            raise ValueError("confidence is all-or-nothing across Quran-span segments")
         return self
 
     @property
     def confidence_reported(self) -> bool:
-        eligible = [s for s in self.segments if s.may_claim_quran]
+        eligible = [s for s in self.segments if s.confidence_eligible]
         return bool(eligible) and all(s.confidence is not None for s in eligible)
 
 

@@ -57,7 +57,7 @@ One file per case plus `submission.json`.
 
 - `reference`: `S:A:W-S:A:W` in full (same chapter, start ordinal ≤ end ordinal), `Basmala`, `Isti'adha`, or `null`. `S:A-S:A` and bare `S:A:W` are validation errors. A single word is `S:A:W-S:A:W` with equal ends.
 - `segments` ordered by `start_s`; `end_s > start_s`. Two consecutive segments may overlap by at most **0.5 s**; more is a validation error.
-- `confidence` in [0, 1]; all-or-nothing across the segments that can be Quran-claiming (span or `Basmala` references) of a file, and across the files of one submission (4.9). `Isti'adha` and `null` segments may carry it; it is ignored.
+- `confidence` in [0, 1]; all-or-nothing across span-reference segments of a file, and across the files of one submission (4.9). `Basmala`, `Isti'adha`, and `null` segments may carry it; it is ignored.
 - `runtime_seconds` > 0, optional per file, all-or-nothing across the submission (4.7).
 - Unknown fields and non-finite numbers are rejected. A segment ending after `duration_s + 1.0` is a scoring error.
 
@@ -135,9 +135,9 @@ Cross-lane consequences fall out of 4.2–4.4: a Quran segment whose range holds
 
 ### 4.9 Consumer confidence
 
-Confidence is scored once per Quran-claiming segment. Its outcome `y` is 1 when the segment is clean under 4.4 and 0 otherwise. Fixed user-facing tiers are green (`c >= 0.80`), amber (`0.60 <= c < 0.80`), and red (`c < 0.60`).
+Confidence is scored once per Quran-lane span-reference segment. Explicit `Basmala`, `Isti'adha`, and `null` references are ignored even when they carry confidence. Its outcome `y` is 1 when the segment is clean under 4.4 and 0 otherwise. Fixed user-facing tiers are green (`c >= 0.80`), amber (`0.60 <= c < 0.80`), and red (`c < 0.60`).
 
-Let `N` be all Quran-claiming output segments, `Cg` clean green segments, and `Wg` non-clean green segments:
+Let `N` be all Quran-lane span-reference output segments, `Cg` clean green segments, and `Wg` non-clean green segments:
 
 - Trusted coverage = `max(0, (Cg − 4 Wg) / N)`.
 - Unsafe green = `Wg / (Cg + Wg)`, undefined when there are no green segments.
@@ -155,7 +155,7 @@ Denied Quran words; uncovered Quran words; false claims of segments more than ha
 
 ## 5. Aggregation and report
 
-- **Pooled** (the leaderboard row): the underlying counts summed across all cases, then the ratios. Consumer confidence pools Quran segments; RTF pools seconds. Nothing on the leaderboard is a mean of per-case values.
+- **Pooled** (the leaderboard row): the underlying counts summed across all cases, then the ratios. Consumer confidence pools eligible Quran-span segments; RTF pools seconds. Nothing on the leaderboard is a mean of per-case values.
 - **Equal-case**: unweighted mean of per-case values, skipping undefined ones. Detail view only.
 - **Slices**: pooled and equal-case over the cases sharing a facet value, keyed `facet=value` (`style=hadr`, `noisy=true`, `riwayah=hafs_an_asim`, ...).
 
@@ -173,7 +173,7 @@ The report is a JSON document: `scorer_version`, `corpus_version` (the label the
 
 ## 7. Tests (tests/test_scoring.py)
 
-Granularity invariance (word counts); repeat blindness and catch; micro-segments not clean; segment must cover its words; non-Quran speech not clean; leak into a formula neighbour; unmatched class tokens in a Quran span are false; Basmala confidence consistency; empty submission scores 0; missed repeats score 0; consecutive Basmalas are two occurrences; exact needs every word; non-finite rejected; segment beyond audio; runtime needs metadata; duplicate or empty corpus; fingerprint and position error; CLI validate and score; invented repeat (`0-9, 7-9` over `0-11`: 3 false, 2 missed, one invented); chapter change resets repeats; clean pad 1.9 s vs 2.1 s; leak 0.4 s vs 0.6 s; nothing-extra rule; null vs gap (same words, different `denied`/`uncovered`); formula segment off the headline; Quran swallowing a Basmala not clean and formula missed; `Basmala` over Quran audio costs those words and is extra; Quran over formula audio is false; Basmala class identical over Fatiha and over another chapter's opening; a Fatiha span beyond the class is Quran; fixed confidence tier edges; four-to-one unsafe-green penalty; confidence and runtime all-or-nothing across cases; runtime requires hardware_class; overlap 0.4 s accepted, 0.6 s rejected; shorthand references rejected; single-word span accepted; overlap attribution to the earlier segment; pooling is not a mean; missing case is an error; facet slices; no repeats anywhere is `null`; false-over-non-Quran diagnostic.
+Granularity invariance (word counts); repeat blindness and catch; micro-segments not clean; segment must cover its words; non-Quran speech not clean; leak into a formula neighbour; unmatched class tokens in a Quran span are false; Basmala confidence optional and ignored; empty submission scores 0; missed repeats score 0; consecutive Basmalas are two occurrences; exact needs every word; non-finite rejected; segment beyond audio; runtime needs metadata; duplicate or empty corpus; fingerprint and position error; CLI validate and score; invented repeat (`0-9, 7-9` over `0-11`: 3 false, 2 missed, one invented); chapter change resets repeats; clean pad 1.9 s vs 2.1 s; leak 0.4 s vs 0.6 s; nothing-extra rule; null vs gap (same words, different `denied`/`uncovered`); formula segment off the headline; Quran swallowing a Basmala not clean and formula missed; `Basmala` over Quran audio costs those words and is extra; Quran over formula audio is false; Basmala class identical over Fatiha and over another chapter's opening; a Fatiha span beyond the class is Quran; fixed confidence tier edges; four-to-one unsafe-green penalty; confidence and runtime all-or-nothing across cases; runtime requires hardware_class; overlap 0.4 s accepted, 0.6 s rejected; shorthand references rejected; single-word span accepted; overlap attribution to the earlier segment; pooling is not a mean; missing case is an error; facet slices; no repeats anywhere is `null`; false-over-non-Quran diagnostic.
 
 ## 8. Roadmap boards
 
