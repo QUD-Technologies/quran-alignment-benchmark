@@ -7,6 +7,8 @@ build/
 corpus/
 .venv/
 node_modules/
+/.local/
+/results/
 
 # Local planning and browser QA artifacts
 /DESIGN.md

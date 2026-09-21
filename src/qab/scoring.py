@@ -58,7 +58,7 @@ class CaseScore:
     caught_repeats: int
     repeat_position_errors: list[int]           # |first claimed ordinal - anchor ordinal| per caught event
     formulas: dict[str, FormulaCounts]
-    confidence_pairs: list[tuple[float, int]]   # (confidence, matched) per Quran-lane claim word
+    confidence_segments: list[tuple[float, int, bool]]  # (confidence, clean, critical non-Quran)
     runtime_seconds: float | None
     denied: int
     uncovered: int
@@ -230,16 +230,16 @@ def score_case(case: Case, submission: Submission) -> CaseScore:
 
     formulas = _formulas(tokens, segments, lane, seg_claim_tokens, seg_matches, content, matched_instance_in)
 
-    conf_pairs: list[tuple[float, int]] = []
+    conf_segments: list[tuple[float, int, bool]] = []
     if submission.confidence_reported:
         for j, s in enumerate(seg_scores):
             if s.lane != "quran":
                 continue
             if segments[j].confidence is None:
                 raise ValueError(f"{case.id}: Quran-claiming segment {j} carries no confidence")
-            matched_kpos = {kpos for _, kpos in seg_matches[j]}
-            for k in quran_lane_tokens[j]:
-                conf_pairs.append((segments[j].confidence, 1 if k in matched_kpos else 0))
+            duration = segments[j].end_s - segments[j].start_s
+            critical = s.false_claims > 0 and s.non_quran_overlap_s * 2 > duration
+            conf_segments.append((segments[j].confidence, int(s.clean), critical))
 
     denied = sum(1 for i, j in enumerate(owner) if is_quran[i] and j is not None and lane[j] == "null")
     uncovered = sum(1 for i, j in enumerate(owner) if is_quran[i] and j is None)
@@ -256,7 +256,7 @@ def score_case(case: Case, submission: Submission) -> CaseScore:
         clean_segments=sum(1 for s in seg_scores if s.lane == "quran" and s.clean),
         truth_repeats=len(truth_anchors), predicted_repeats=len(pred_anchors), caught_repeats=caught,
         repeat_position_errors=position_errors,
-        formulas=formulas, confidence_pairs=conf_pairs, runtime_seconds=submission.runtime_seconds,
+        formulas=formulas, confidence_segments=conf_segments, runtime_seconds=submission.runtime_seconds,
         denied=denied, uncovered=uncovered, false_over_non_quran=over_nq,
         instances_in_clean=in_clean, segments=seg_scores)
 

@@ -133,14 +133,21 @@ Scored per occurrence; reported in full, off the leaderboard. An **occurrence** 
 
 Cross-lane consequences fall out of 4.2–4.4: a Quran segment whose range holds formula instances it does not claim is not clean and leaves them unaccounted (the occurrence is missed unless another segment detects it); Quran claimed over formula audio is false claims; a formula segment over Quran audio leaves those Quran instances unaccounted (Words found) and is extra.
 
-### 4.9 Confidence skill
+### 4.9 Consumer confidence
 
-Over all Quran-lane claim words of Quran-claiming segments, each inheriting its segment's confidence `c`, with `y = 1` when the claim word matched:
+Confidence is scored once per Quran-claiming segment. Its outcome `y` is 1 when the segment is clean under 4.4 and 0 otherwise. Fixed user-facing tiers are green (`c >= 0.80`), amber (`0.60 <= c < 0.80`), and red (`c < 0.60`).
 
-- Brier = mean (c − y)²; p = mean y; Brier_flat = p (1 − p)
-- Skill = `1 − Brier / Brier_flat` when Brier_flat > 0 (`state: skill`), else `1 − Brier` (`state: degenerate`).
+Let `N` be all Quran-claiming output segments, `Cg` clean green segments, and `Wg` non-clean green segments:
 
-Not reported → `null` (`state: not_reported`). Confidence is all-or-nothing across the submission: reported on a strict subset of cases scores as not reported. Detail view adds AUROC, ECE (10 equal-width bins), words counted, min confidence on correct and max on wrong words.
+- Trusted coverage = `max(0, (Cg − 4 Wg) / N)`.
+- Unsafe green = `Wg / (Cg + Wg)`, undefined when there are no green segments.
+- Green coverage = `(Cg + Wg) / N`; safe green coverage = `Cg / N`.
+
+The four-to-one penalty makes 80% green accuracy the break-even point. Amber and red segments remain in `N` and earn zero rather than a penalty. Missing recitation is handled by Words found and Words F1; alignment accepts arbitrary output granularity and therefore has no universal set of reference alignment segments.
+
+A green segment is a critical non-Quran error when it has false Quran claims and more than half its duration overlaps annotated `non_quran` audio. This count is a diagnostic, not a separate weight.
+
+Not reported gives `null` headline values (`state: not_reported`). Confidence is all-or-nothing across the submission: reporting it on a strict subset of cases scores as not reported. The detailed report includes segment counts, correctness and accuracy for every tier; green precision; segment-level Brier, Brier skill, AUROC and 10-bin ECE; minimum confidence on a correct segment; and maximum confidence on a wrong segment. Calibration diagnostics do not affect rank.
 
 ### 4.10 Diagnostics (detail view)
 
@@ -148,13 +155,13 @@ Denied Quran words; uncovered Quran words; false claims of segments more than ha
 
 ## 5. Aggregation and report
 
-- **Pooled** (the leaderboard row): the underlying counts summed across all cases, then the ratios. Confidence skill is one Brier over the union of claim words; RTF pools seconds. Nothing on the leaderboard is a mean of per-case values.
+- **Pooled** (the leaderboard row): the underlying counts summed across all cases, then the ratios. Consumer confidence pools Quran segments; RTF pools seconds. Nothing on the leaderboard is a mean of per-case values.
 - **Equal-case**: unweighted mean of per-case values, skipping undefined ones. Detail view only.
 - **Slices**: pooled and equal-case over the cases sharing a facet value, keyed `facet=value` (`style=hadr`, `noisy=true`, `riwayah=hafs_an_asim`, ...).
 
 Pooling makes long recordings weigh more; that is intended (the word is the unit) and is balanced by corpus composition and slices, not by averaging.
 
-The report is a JSON document: `scorer_version`, `corpus_version` (the label the scorer was given), `corpus_fingerprint` (sha256 of the scored truth: ids, durations, riwayah, words, non_quran; the leaderboard checks it against the pinned dataset revision), `submission` (metadata echoed), `runtime_reported`, `confidence_reported`, `headline` (words_f1, clean_segments, repeats_f1, words_per_segment, rtf + hardware_class, confidence_skill), `pooled`, `equal_case`, `slices`, `formulas`, `confidence`, `diagnostics`, `cases[]`.
+The report is a JSON document: `scorer_version`, `corpus_version` (the label the scorer was given), `corpus_fingerprint` (sha256 of the scored truth: ids, durations, riwayah, words, non_quran; the leaderboard checks it against the selected dataset version), `submission` (metadata echoed), `runtime_reported`, `confidence_reported`, `headline` (words_f1, clean_segments, repeats_f1, words_per_segment, rtf + hardware_class, trusted_coverage, unsafe_green), `pooled`, `equal_case`, `slices`, `formulas`, `confidence`, `diagnostics`, `cases[]`.
 
 ## 6. Tooling
 
@@ -166,7 +173,7 @@ The report is a JSON document: `scorer_version`, `corpus_version` (the label the
 
 ## 7. Tests (tests/test_scoring.py)
 
-Granularity invariance (word counts); repeat blindness and catch; micro-segments not clean; segment must cover its words; non-Quran speech not clean; leak into a formula neighbour; unmatched class tokens in a Quran span are false; Basmala confidence consistency; empty submission scores 0; missed repeats score 0; consecutive Basmalas are two occurrences; exact needs every word; non-finite rejected; segment beyond audio; runtime needs metadata; duplicate or empty corpus; fingerprint and position error; CLI validate and score; invented repeat (`0-9, 7-9` over `0-11`: 3 false, 2 missed, one invented); chapter change resets repeats; clean pad 1.9 s vs 2.1 s; leak 0.4 s vs 0.6 s; nothing-extra rule; null vs gap (same words, different `denied`/`uncovered`); formula segment off the headline; Quran swallowing a Basmala not clean and formula missed; `Basmala` over Quran audio costs those words and is extra; Quran over formula audio is false; Basmala class identical over Fatiha and over another chapter's opening; a Fatiha span beyond the class is Quran; confidence three states, flat constant scores exactly 0; confidence and runtime all-or-nothing across cases; runtime requires hardware_class; overlap 0.4 s accepted, 0.6 s rejected; shorthand references rejected; single-word span accepted; overlap attribution to the earlier segment; pooling is not a mean; missing case is an error; facet slices; no repeats anywhere is `null`; false-over-non-Quran diagnostic.
+Granularity invariance (word counts); repeat blindness and catch; micro-segments not clean; segment must cover its words; non-Quran speech not clean; leak into a formula neighbour; unmatched class tokens in a Quran span are false; Basmala confidence consistency; empty submission scores 0; missed repeats score 0; consecutive Basmalas are two occurrences; exact needs every word; non-finite rejected; segment beyond audio; runtime needs metadata; duplicate or empty corpus; fingerprint and position error; CLI validate and score; invented repeat (`0-9, 7-9` over `0-11`: 3 false, 2 missed, one invented); chapter change resets repeats; clean pad 1.9 s vs 2.1 s; leak 0.4 s vs 0.6 s; nothing-extra rule; null vs gap (same words, different `denied`/`uncovered`); formula segment off the headline; Quran swallowing a Basmala not clean and formula missed; `Basmala` over Quran audio costs those words and is extra; Quran over formula audio is false; Basmala class identical over Fatiha and over another chapter's opening; a Fatiha span beyond the class is Quran; fixed confidence tier edges; four-to-one unsafe-green penalty; confidence and runtime all-or-nothing across cases; runtime requires hardware_class; overlap 0.4 s accepted, 0.6 s rejected; shorthand references rejected; single-word span accepted; overlap attribution to the earlier segment; pooling is not a mean; missing case is an error; facet slices; no repeats anywhere is `null`; false-over-non-Quran diagnostic.
 
 ## 8. Roadmap boards
 

@@ -18,6 +18,9 @@ from .scoring import CaseScore, FormulaCounts, f1, score_case
 from .schema import Case, Submission, SubmissionMeta
 
 ECE_BINS = 10
+GREEN_CONFIDENCE = 0.80
+AMBER_CONFIDENCE = 0.60
+GREEN_WRONG_PENALTY = 4.0
 
 
 @dataclass
@@ -32,7 +35,9 @@ class Pooled:
     repeats_f1: float | None
     words_per_segment: float | None
     rtf: float | None
-    confidence_skill: float | None
+    trusted_coverage: float | None
+    unsafe_green: float | None
+    green_coverage: float | None
     counts: dict[str, int]
 
 
@@ -45,33 +50,59 @@ def _mean(values: list[float | None]) -> float | None:
     return sum(present) / len(present) if present else None
 
 
-def _confidence(pairs: list[tuple[float, int]]) -> dict[str, Any]:
-    if not pairs:
-        return {"reported": False, "skill": None, "state": "not_reported"}
-    n = len(pairs)
-    brier = sum((c - y) ** 2 for c, y in pairs) / n
-    p = sum(y for _, y in pairs) / n
+def _confidence(observations: list[tuple[float, int, bool]]) -> dict[str, Any]:
+    if not observations:
+        return {"reported": False, "trusted_coverage": None, "unsafe_green": None,
+                "state": "not_reported"}
+    n = len(observations)
+    green = [(c, y, critical) for c, y, critical in observations if c >= GREEN_CONFIDENCE]
+    green_correct = sum(y for _, y, _ in green)
+    green_wrong = len(green) - green_correct
+    trusted_raw = (green_correct - GREEN_WRONG_PENALTY * green_wrong) / n
+    tiers = {}
+    for name, lower, upper in (("green", GREEN_CONFIDENCE, None),
+                               ("amber", AMBER_CONFIDENCE, GREEN_CONFIDENCE),
+                               ("red", None, AMBER_CONFIDENCE)):
+        rows = [(c, y) for c, y, _ in observations
+                if (lower is None or c >= lower) and (upper is None or c < upper)]
+        correct = sum(y for _, y in rows)
+        tiers[name] = {"segments": len(rows), "correct": correct,
+                       "wrong": len(rows) - correct,
+                       "share": len(rows) / n,
+                       "accuracy": correct / len(rows) if rows else None}
+
+    # Proper probability diagnostics remain useful, but no longer determine the public score.
+    brier = sum((c - y) ** 2 for c, y, _ in observations) / n
+    p = sum(y for _, y, _ in observations) / n
     flat = p * (1 - p)
     if flat > 0:
-        skill, state = 1 - brier / flat, "skill"
+        skill = 1 - brier / flat
     else:
-        skill, state = 1 - brier, "degenerate"
-    correct = sorted(c for c, y in pairs if y)
-    wrong = sorted(c for c, y in pairs if not y)
+        skill = 1 - brier
+    correct = sorted(c for c, y, _ in observations if y)
+    wrong = sorted(c for c, y, _ in observations if not y)
     auroc = None
     if correct and wrong:
         better = sum(bisect.bisect_left(wrong, c) + 0.5 * (bisect.bisect_right(wrong, c) - bisect.bisect_left(wrong, c))
                      for c in correct)
         auroc = better / (len(correct) * len(wrong))
     bins = [[0, 0.0, 0.0] for _ in range(ECE_BINS)]
-    for c, y in pairs:
+    for c, y, _ in observations:
         b = min(int(c * ECE_BINS), ECE_BINS - 1)
         bins[b][0] += 1
         bins[b][1] += c
         bins[b][2] += y
     ece = sum(cnt / n * abs(sc / cnt - sy / cnt) for cnt, sc, sy in bins if cnt)
-    return {"reported": True, "skill": skill, "state": state, "brier": brier, "brier_flat": flat,
-            "auroc": auroc, "ece": ece, "words": n,
+    return {"reported": True, "state": "reported",
+            "trusted_coverage": max(0.0, trusted_raw), "trusted_coverage_raw": trusted_raw,
+            "unsafe_green": green_wrong / len(green) if green else None,
+            "green_coverage": len(green) / n, "safe_green_coverage": green_correct / n,
+            "green_precision": green_correct / len(green) if green else None,
+            "eligible_segments": n, "green_segments": len(green),
+            "green_correct": green_correct, "green_wrong": green_wrong,
+            "critical_non_quran_green": sum(critical for _, _, critical in green),
+            "tiers": tiers, "brier": brier, "brier_flat": flat, "brier_skill": skill,
+            "auroc": auroc, "ece": ece, "segments": n,
             "min_confidence_correct": correct[0] if correct else None,
             "max_confidence_wrong": wrong[-1] if wrong else None}
 
@@ -96,19 +127,21 @@ def pool(scores: list[CaseScore], runtime_reported: bool) -> Pooled:
     rtf = None
     if runtime_reported:
         rtf = sum(s.runtime_seconds for s in scores) / sum(s.duration_s for s in scores)
-    conf = _confidence([p for s in scores for p in s.confidence_pairs])
+    conf = _confidence([p for s in scores for p in s.confidence_segments])
     return Pooled(
         cases=len(scores), words_found=found, words_correct=correct, words_f1=f1(correct, found),
         clean_segments=_ratio(c["clean_segments"], c["quran_segments"]),
         repeats_caught=caught, repeats_real=real, repeats_f1=f1(real, caught),
         words_per_segment=_ratio(c["claimed_words"], c["quran_segments"]), rtf=rtf,
-        confidence_skill=conf["skill"], counts=c)
+        trusted_coverage=conf["trusted_coverage"], unsafe_green=conf["unsafe_green"],
+        green_coverage=conf.get("green_coverage"), counts=c)
 
 
 def equal_case(scores: list[CaseScore]) -> dict[str, float | None]:
     per = [pool([s], s.runtime_seconds is not None) for s in scores]
     keys = ["words_found", "words_correct", "words_f1", "clean_segments", "repeats_caught", "repeats_real",
-            "repeats_f1", "words_per_segment", "rtf"]
+            "repeats_f1", "words_per_segment", "rtf", "trusted_coverage", "unsafe_green",
+            "green_coverage"]
     return {k: _mean([getattr(p, k) for p in per]) for k in keys}
 
 
@@ -127,7 +160,7 @@ def _formulas(scores: list[CaseScore]) -> dict[str, dict[str, int]]:
 def _headline(p: Pooled, hardware_class: str | None) -> dict[str, Any]:
     return {"words_f1": p.words_f1, "clean_segments": p.clean_segments, "repeats_f1": p.repeats_f1,
             "words_per_segment": p.words_per_segment, "rtf": p.rtf, "hardware_class": hardware_class,
-            "confidence_skill": p.confidence_skill}
+            "trusted_coverage": p.trusted_coverage, "unsafe_green": p.unsafe_green}
 
 
 def corpus_fingerprint(cases: list[Case]) -> str:
@@ -183,7 +216,7 @@ def evaluate(cases: list[Case], submissions: list[Submission], meta: SubmissionM
         if not runtime_reported:
             s.runtime_seconds = None
         if not confidence_reported:
-            s.confidence_pairs = []
+            s.confidence_segments = []
         scores.append(s)
     hardware_class = meta.hardware_class if (meta and runtime_reported) else None
     overall = pool(scores, runtime_reported)
@@ -207,7 +240,7 @@ def evaluate(cases: list[Case], submissions: list[Submission], meta: SubmissionM
         "equal_case": equal_case(scores),
         "slices": slices,
         "formulas": _formulas(scores),
-        "confidence": _confidence([p for s in scores for p in s.confidence_pairs]),
+        "confidence": _confidence([p for s in scores for p in s.confidence_segments]),
         "diagnostics": _diagnostics(scores, overall.counts),
         "cases": [_case_document(s) for s in scores],
     }

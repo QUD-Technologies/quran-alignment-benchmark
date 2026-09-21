@@ -66,7 +66,7 @@ Leaderboard values are pooled over the whole corpus: counts are summed across al
 
 **RTF** *(processing time per second of audio, optional, lower is better)*. Self-reported, shown separately for `cpu` and `gpu`. Reported for every recording or for none.
 
-**Confidence skill** *(how much better than a flat guess, optional)*. For systems that attach a confidence to each segment, meaning the probability that the segment's claimed words are correct. Each claimed word inherits its segment's confidence and is scored against whether it was matched. 1 means every confidence was exactly right; 0 means it carried no information beyond the system's overall accuracy; below 0 means it misled. Can be negative, and is `null` when not reported.
+**Trusted coverage** and **Unsafe green** *(consumer confidence, optional)*. Confidence is scored once per Quran segment. Scores at least 0.80 are green (safe to use), 0.60 to below 0.80 are amber (review recommended), and below 0.60 are red (probably incorrect). Trusted coverage rewards correct green segments and makes each incorrect green segment cancel four correct ones. Unsafe green is the share of green segments that are not clean. The detailed report retains tier counts and probability-calibration diagnostics.
 
 ## What is in the corpus (v1)
 
@@ -120,7 +120,7 @@ The last segment claims words already claimed two segments earlier: that is how 
 | `case_id` | Recording `id` from the corpus. |
 | `segments` | Ordered by `start_s`. Consecutive segments may overlap by at most 0.5 s. |
 | `reference` | A word span `S:A:W-S:A:W` within one chapter and in reading order; or `Basmala`; or `Isti'adha`; or `null`. |
-| `confidence` | Optional. The system's probability, 0 to 1, that the segment is right. Either every Quran segment carries one or none does, across the whole submission. |
+| `confidence` | Optional. The system's score, 0 to 1, that the segment is safe to use as supplied. Green is ≥0.80, amber is ≥0.60 and <0.80, and red is <0.60. Either every Quran segment carries one or none does, across the whole submission. |
 | `runtime_seconds` | Optional. Total processing time for this recording. Reported for every recording or for none. |
 
 A span is always written in full as `surah:ayah:word-surah:ayah:word`, with words numbered from 1 within each verse. A single word is `2:5:1-2:5:1`. Whole-verse or bare-word shorthands are rejected by the validator.
@@ -145,7 +145,7 @@ In Hafs, verse 1:1 of al-Fatiha is the Basmala, and the same text opens every ot
 ## Running your system and scoring locally
 
 ```bash
-pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.1.0"
+pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.2.0"
 
 qab fetch --corpus v1 --out corpus/          # <id>.mp3 and <id>.json (the ground truth) per recording
 # run your system over corpus/*.mp3 and write submissions/<id>.json

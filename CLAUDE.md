@@ -20,7 +20,7 @@ Scorer, schemas and corpus tooling for the Quran recitation alignment benchmark.
 - Pure Python, pydantic only; `datasets`/`huggingface_hub` behind the `corpus` extra. No network in scoring.
 - Constants of the benchmark (`TAU_PAD_S`, `EPSILON_S`, `MAX_OVERLAP_S`) are versioned with the scorer, never parameters.
 - A corpus config (`v1`) is immutable once scored against; changes go to the next config. Reports carry `scorer_version` (package version = git tag) and `corpus_fingerprint`.
-- Install by git tag, not PyPI: `pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.1.0"`.
+- Install by git tag, not PyPI: `pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.2.0"`.
 - License: CC BY 4.0 for code and annotations, not the audio.
 - `ruff check src tests` and `pytest -q` must pass (CI). Commit messages: `type(scope): what` (feat, fix, docs, test, chore).
 

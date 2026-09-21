@@ -192,21 +192,57 @@ def _pooled(case, submission, meta=None):
     return evaluate([case], [submission], meta, corpus_version="test")
 
 
-def test_confidence_states():
+def test_consumer_confidence_states_and_tiers():
     case = make_case(chapter_words(CH, 0, 9))
     none = _pooled(case, sub([(0, 10, span(CH, 0, 9))]))
-    assert none["confidence"]["state"] == "not_reported" and none["headline"]["confidence_skill"] is None
-    flat = _pooled(case, sub([(0, 5, span(CH, 0, 4), 0.5), (5, 10, span(CH, 10, 14), 0.5)]))
-    assert flat["confidence"]["state"] == "skill" and abs(flat["headline"]["confidence_skill"]) < 1e-9
-    perfect = _pooled(case, sub([(0, 10, span(CH, 0, 9), 0.9)]))
-    assert perfect["confidence"]["state"] == "degenerate" and abs(perfect["headline"]["confidence_skill"] - (1 - 0.01)) < 1e-9
+    assert none["confidence"]["state"] == "not_reported"
+    assert none["headline"]["trusted_coverage"] is None
+    perfect = _pooled(case, sub([(0, 10, span(CH, 0, 9), 0.8)]))
+    assert perfect["headline"]["trusted_coverage"] == 1
+    assert perfect["headline"]["unsafe_green"] == 0
+    assert perfect["confidence"]["tiers"]["green"]["segments"] == 1
+
+
+def test_consumer_confidence_penalizes_unsafe_green_four_times():
+    case = make_case(chapter_words(CH, 0, 29))
+    segments = [(i, i + 5, span(CH, i, i + 4), 0.8) for i in range(0, 25, 5)]
+    segments.append((25, 30, span(CH, 35, 39), 0.8))
+    rep = _pooled(case, sub(segments))
+    assert rep["confidence"]["green_correct"] == 5
+    assert rep["confidence"]["green_wrong"] == 1
+    assert rep["headline"]["unsafe_green"] == pytest.approx(1 / 6)
+    assert rep["headline"]["trusted_coverage"] == pytest.approx(1 / 6)
+
+
+def test_consumer_confidence_fixed_tier_edges():
+    case = make_case(chapter_words(CH, 0, 14))
+    rep = _pooled(case, sub([(0, 5, span(CH, 0, 4), 0.8),
+                             (5, 10, span(CH, 5, 9), 0.6),
+                             (10, 15, span(CH, 10, 14), 0.59)]))
+    assert {tier: values["segments"] for tier, values in rep["confidence"]["tiers"].items()} == {
+        "green": 1, "amber": 1, "red": 1}
+
+
+def test_consumer_confidence_no_green_is_zero_coverage_and_undefined_risk():
+    case = make_case(chapter_words(CH, 0, 4))
+    rep = _pooled(case, sub([(0, 5, span(CH, 0, 4), 0.79)]))
+    assert rep["headline"]["trusted_coverage"] == 0
+    assert rep["headline"]["unsafe_green"] is None
+
+
+def test_consumer_confidence_marks_green_quran_over_non_quran_critical():
+    case = make_case(chapter_words(CH, 0, 4), non_quran=[(6, 10)])
+    rep = _pooled(case, sub([(0, 5, span(CH, 0, 4), 0.8),
+                             (6, 10, span(CH, 5, 9), 0.8)]))
+    assert rep["confidence"]["critical_non_quran_green"] == 1
+    assert rep["confidence"]["green_wrong"] == 1
 
 
 def test_confidence_all_or_nothing_across_cases():
     a = make_case(chapter_words(CH, 0, 4), id="a")
     b = make_case(chapter_words(CH, 0, 4), id="b")
     rep = evaluate([a, b], [sub([(0, 5, span(CH, 0, 4), 0.9)], "a"), sub([(0, 5, span(CH, 0, 4))], "b")])
-    assert rep["confidence_reported"] is False and rep["headline"]["confidence_skill"] is None
+    assert rep["confidence_reported"] is False and rep["headline"]["trusted_coverage"] is None
 
 
 # --- validation -----------------------------------------------------------------------------
@@ -333,7 +369,7 @@ def test_basmala_confidence_consistency():
         sub([(0, 4, "Basmala"), (4, 11, span(1, 4, 10), 0.9)])
     case = make_case(chapter_words(1, 0, 10))
     rep = _pooled(case, sub([(0, 4, "Basmala", 0.9), (4, 11, span(1, 4, 10), 0.9)]))
-    assert rep["confidence"]["words"] == 11
+    assert rep["confidence"]["segments"] == 2
 
 
 def test_empty_submission_scores_zero_not_null():

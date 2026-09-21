@@ -44,14 +44,15 @@
     repeats_f1: 'Balances catching real repetitions with avoiding false repeat detections. Higher is better.',
     words_per_segment: 'Average Quran words per output segment. Lower means finer chunks; higher means longer passages. Neither is inherently better.',
     rtf: 'Audio processed per unit of time. 10× means ten minutes of audio were processed in one minute. Higher is faster. The exact self-reported real-time factor (RTF) and hardware appear below each value.',
-    confidence_skill: 'How well the system knows when its word claims are right. Higher is better; 1 is perfect. Usually, 0 means no gain over its overall correctness rate, and negative means worse.',
+    trusted_coverage: 'Useful green output after each incorrect green segment cancels four correct green segments. Higher is better.',
+    unsafe_green: 'The share of green segments, confidence 0.80 or higher, that are not clean. Lower is safer.',
     words_found: 'The percentage of recited words found in the right audio segments. Higher means fewer words missed.',
     words_correct: 'The percentage of claimed words actually recited in their audio segments. Higher means fewer incorrect word claims.',
     repeats_caught: 'The percentage of real repetition events detected. Higher means fewer repetitions missed.',
     repeats_real: 'The percentage of detected repetition events that really happened. Higher means fewer false repeat detections.',
     user_parameters: 'Self-reported count of result-affecting controls available to users, such as demo settings or documented package options. Excludes internal developer settings. Fewer can be simpler; more can offer flexibility.',
   };
-  const alignmentCols = [{key:'words_f1', label:'Words F1'}, {key:'clean_segments', label:'Clean segments'}, {key:'repeats_f1', label:'Repeats F1'}, {key:'words_per_segment', label:'Words / segment'}, {key:'rtf', label:'Processing speed'}, {key:'confidence_skill', label:'Confidence skill'}];
+  const alignmentCols = [{key:'words_f1', label:'Words F1'}, {key:'clean_segments', label:'Clean segments'}, {key:'repeats_f1', label:'Repeats F1'}, {key:'words_per_segment', label:'Words / segment'}, {key:'rtf', label:'Processing speed'}, {key:'trusted_coverage', label:'Trusted coverage'}, {key:'unsafe_green', label:'Unsafe green'}];
   const extraCols = [{key:'words_found', label:'Words found'}, {key:'words_correct', label:'Words correct'}, {key:'repeats_caught', label:'Repeats caught'}, {key:'repeats_real', label:'Repeats real'}];
   $: baseCols = task==='alignment'?alignmentCols:task==='segmentation'?[{key:'segments_f1',label:'Segments F1'},{key:'boundaries_f1',label:'Boundaries F1'},{key:'rtf',label:'Processing speed'}]:[{key:'words_timed',label:'Words timed correctly'},{key:'clean_clips',label:'Clean clips'}];
   $: if(draftReady) saveDraft({metadata:{system,description,url,email,user_parameters:userParameters,hardware_class:hardwareClass,hardware,tasks:[task],selected_tasks:selectedTasks},profiles:{...profileDrafts,[profileKey]:{files:uploaded,hardware}},corpus:corpus?.latest||''});
@@ -103,9 +104,9 @@
   function toggleTheme() {theme=theme==='light'?'dark':'light';document.documentElement.dataset.theme=theme;try{localStorage.setItem('qab-theme',theme);}catch{}}
   function label(k: string,v: string) {if(k==='noisy') return v==='true'?'Noisy':'Clean'; if(k==='multi_surah')return v==='true'?'Multiple surahs':'Single surah'; return ({hafs_an_asim:'Hafs',quran_only:'Quran only',prayer:'Prayer',hadr:'Hadr',murattal:'Murattal',mujawwad:'Mujawwad',muallim:'Muallim'} as Record<string,string>)[v] || v;}
   function fmtSpeed(rtf: number) {const speed=1/rtf;return `${speed.toFixed(speed>=10?1:2)}× realtime`;}
-  function fmt(k: string,v: any) {if(v==null)return '—'; if(k==='words_per_segment')return v.toFixed(1); if(k==='rtf')return fmtSpeed(v); if(k==='confidence_skill')return v.toFixed(3); return `${(v*100).toFixed(1)}%`;}
+  function fmt(k: string,v: any) {if(v==null)return '—'; if(k==='words_per_segment')return v.toFixed(1); if(k==='rtf')return fmtSpeed(v); if(k==='unsafe_green')return `${(v*100).toFixed(2)}%`; return `${(v*100).toFixed(1)}%`;}
   function submittedAt(value: string) {return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value));}
-  function sort(k: string) {ascending=sortKey===k?!ascending:k==='rank'||k==='system'||k==='user_parameters';sortKey=k;}
+  function sort(k: string) {ascending=sortKey===k?!ascending:k==='rank'||k==='system'||k==='user_parameters'||k==='unsafe_green';sortKey=k;}
   function sortDataset(k: string) {datasetAsc=datasetSort===k?!datasetAsc:true;datasetSort=k;}
   async function api(path: string, init?: RequestInit) {const r=await fetch(path,init);const j=await r.json();if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:'Request could not be completed');return j;}
   async function load(version?: string) {loading=true;error='';try{corpus=await api('/api/corpus'+(version?'?version='+encodeURIComponent(version):''));filters={};await loadBoard();}catch(e){error=String(e);}finally{loading=false;}}
@@ -199,7 +200,7 @@
     <div class="batch-results">{#each selectedTasks as key}{@const result=batchPreview.tasks[key]}
       <section class="task-result"><h3>{taskNames[key]} <span class="badge">{result.complete?'Ready':'Needs attention'}</span></h3>
       <p>{result.valid} of {result.total} recordings validated.{result.replacement?' Replaces your existing '+taskNames[key]+' results.':''}</p>
-      {#if result.scores}<div class="preview-scores">{#each Object.entries(result.scores).filter(([metric])=>['words_f1','clean_segments','repeats_f1','segments_f1','boundaries_f1','rtf','words_timed','clean_clips'].includes(metric)) as [metric,value]}<div><span>{({words_f1:'Words F1',clean_segments:'Clean segments',repeats_f1:'Repeats F1',segments_f1:'Segments F1',boundaries_f1:'Boundaries F1',rtf:'Processing speed',words_timed:'Words timed correctly',clean_clips:'Clean clips'} as Record<string,string>)[metric]}</span><strong>{fmt(metric,value)}</strong>{#if metric==='rtf'&&value!=null}<small>RTF {Number(value).toFixed(3)} · self-reported</small>{/if}</div>{/each}</div>{/if}
+      {#if result.scores}<div class="preview-scores">{#each Object.entries(result.scores).filter(([metric])=>['words_f1','clean_segments','repeats_f1','trusted_coverage','unsafe_green','segments_f1','boundaries_f1','rtf','words_timed','clean_clips'].includes(metric)) as [metric,value]}<div><span>{({words_f1:'Words F1',clean_segments:'Clean segments',repeats_f1:'Repeats F1',trusted_coverage:'Trusted coverage',unsafe_green:'Unsafe green',segments_f1:'Segments F1',boundaries_f1:'Boundaries F1',rtf:'Processing speed',words_timed:'Words timed correctly',clean_clips:'Clean clips'} as Record<string,string>)[metric]}</span><strong>{fmt(metric,value)}</strong>{#if metric==='rtf'&&value!=null}<small>RTF {Number(value).toFixed(3)} · self-reported</small>{/if}</div>{/each}</div>{/if}
       {#each result.errors as issue}<p class="alert">{issue}</p>{/each}
       {#each result.recordings.filter((r:Row)=>r.status==='invalid') as r}<p class="error-text">{r.id}: {r.error}</p>{/each}
       {#each Object.entries(result.file_errors||{}) as [name,message]}<p class="error-text">{name}: {message}</p>{/each}

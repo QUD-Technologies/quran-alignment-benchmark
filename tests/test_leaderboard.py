@@ -33,7 +33,7 @@ def metadata():
 def predictions(cases):
     return [Submission(case_id=c.id, runtime_seconds=n + 1,
                        segments=[{'start_s': w.start_s, 'end_s': w.end_s,
-                                  'reference': f'{w.word}-{w.word}', 'confidence': .6 + .1 * n}
+                                  'reference': f'{w.word}-{w.word}', 'confidence': .8 + .1 * n}
                                  for w in c.words]) for n, c in enumerate(cases)]
 
 
@@ -89,7 +89,8 @@ def test_publish_auth_privacy_replacement_and_subset_parity(client, metadata, ca
         direct = evaluate([c for c in cases if c.id in ids], [s for s in subs if s.case_id in ids],
                           Metadata(**metadata).scorer_meta())
         assert row['scores'] == direct['pooled']
-        assert row['scores']['confidence_skill'] is not None
+        assert row['scores']['trusted_coverage'] is not None
+        assert row['scores']['unsafe_green'] is not None
         for private in ['secret@example.org', 'private-hf-name', 'owner_sub', 'predictions', '"segments":']:
             assert private not in result.text
     assert publish(client, metadata, subs, p['token']).status_code == 409

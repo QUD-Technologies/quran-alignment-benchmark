@@ -12,7 +12,7 @@ short_description: Compare Quran recitation alignment systems
 
 # Quran Alignment Benchmark
 
-Compare systems, explore the dataset, understand the metrics, and submit predictions using the four tabs in the app.
+Compare systems, explore the dataset, understand the metrics, and submit predictions using the four tabs in the app. Alignment confidence follows a consumer contract: green segments are intended to be safe to use, amber segments should be reviewed, and red segments are probably incorrect.
 
 [Dataset](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) · [Scorer and local scoring](https://github.com/Hetchy/quran-alignment-benchmark)
 
