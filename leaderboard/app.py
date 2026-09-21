@@ -21,6 +21,8 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from huggingface_hub import HfApi
+from huggingface_hub.errors import HfHubHTTPError
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import Field, HttpUrl, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -233,6 +235,35 @@ def digest(meta, subs):
     return hashlib.sha256(json.dumps(body, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
+def verify_hf_token(token: str) -> tuple[str, str]:
+    """Resolve a Hugging Face user token to a stable private owner identity."""
+    try:
+        identity = HfApi().whoami(token=token)
+    except HfHubHTTPError as exc:
+        status = getattr(exc.response, 'status_code', None)
+        if status in (401, 403):
+            raise HTTPException(401, 'Invalid Hugging Face token',
+                                headers={'WWW-Authenticate': 'Bearer'}) from None
+        raise HTTPException(503, 'Hugging Face identity service is unavailable') from None
+    except Exception:
+        raise HTTPException(503, 'Hugging Face identity service is unavailable') from None
+    owner = identity.get('id')
+    username = identity.get('name')
+    if not isinstance(owner, str) or not owner or not isinstance(username, str) or not username:
+        raise HTTPException(401, 'Hugging Face token has no user identity',
+                            headers={'WWW-Authenticate': 'Bearer'})
+    return owner, username
+
+
+async def bearer_identity(request: Request) -> tuple[str, str]:
+    value = request.headers.get('authorization', '')
+    scheme, separator, token = value.partition(' ')
+    if scheme.lower() != 'bearer' or not separator or not token or len(token) > 512:
+        raise HTTPException(401, 'Use Authorization: Bearer <hf-token>',
+                            headers={'WWW-Authenticate': 'Bearer'})
+    return await run_in_threadpool(verify_hf_token, token)
+
+
 def create_app(cases_override=None, store_override=None):
     secret = os.environ.get('SESSION_SECRET') or secrets.token_hex(32)
     signer = URLSafeTimedSerializer(secret, salt='qab-preview')
@@ -258,7 +289,7 @@ def create_app(cases_override=None, store_override=None):
         state['ready'] = True
         yield
 
-    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     secure = bool(os.getenv('SPACE_HOST'))
     app.add_middleware(SessionMiddleware, secret_key=secret, https_only=secure,
                        same_site='none' if secure else 'lax', max_age=8 * 3600)
@@ -564,6 +595,30 @@ def create_app(cases_override=None, store_override=None):
             task: {'hash': digest(meta.model_copy(update={'tasks': [task]}), submissions[task]),
                    'previous': result['previous']} for task, result in results.items()}}
 
+    def commit_batch(meta, submissions, proof, owner, username):
+        with publish_lock:
+            owners = {r['owner_sub'] for r in state['records'] if r['key'] == meta.key}
+            if owners and owner not in owners:
+                raise HTTPException(403, 'This system name belongs to another account')
+            records = []
+            for task in meta.tasks:
+                old = current(meta.key, CONFIG['latest'], meta.hardware_class, task)
+                if (old['id'] if old else None) != proof['tasks'][task]['previous']:
+                    raise HTTPException(409, 'A selected task changed since preview. Review again.')
+                records.append({'id': secrets.token_hex(16), 'key': meta.key, 'owner_sub': owner,
+                    'owner_username': username,
+                    'created_at': datetime.now(timezone.utc).isoformat(), 'corpus_version': CONFIG['latest'],
+                    'scorer_version': __version__, 'task_scorer_version': TASK_VERSION if task != 'alignment' else None,
+                    'corpus_fingerprint': corpus_fingerprint(corpus(CONFIG['latest'])),
+                    'task_fingerprint': task_fingerprint(corpus(CONFIG['latest'])) if task != 'alignment' else None,
+                    'metadata': meta.model_copy(update={'tasks': [task]}).model_dump(mode='json'),
+                    'replaces': proof['tasks'][task]['previous'],
+                    'predictions': [s.model_dump(mode='json') for s in submissions[task]]})
+            # One durable object is the atomic publication boundary for every selected task.
+            state['store'].put({'id': secrets.token_hex(16), 'batch_records': records})
+            state['records'].extend(records)
+            return {'published': True, 'tasks': meta.tasks, 'ids': [r['id'] for r in records]}
+
     @app.post('/api/preview-batch')
     async def preview_batch(request: Request, files: Annotated[list[UploadFile], File()],
                             metadata: Annotated[str, Form()]):
@@ -590,30 +645,40 @@ def create_app(cases_override=None, store_override=None):
         if not all(r['complete'] for r in results.values()) or proof != batch_proof(meta, submissions, results):
             raise HTTPException(409, 'Files, tasks, or details changed. Preview all selected tasks again.')
 
-        def commit_batch():
-            with publish_lock:
-                owners = {r['owner_sub'] for r in state['records'] if r['key'] == meta.key}
-                if owners and owner not in owners:
-                    raise HTTPException(403, 'This system name belongs to another account')
-                records = []
-                for task in meta.tasks:
-                    old = current(meta.key, CONFIG['latest'], meta.hardware_class, task)
-                    if (old['id'] if old else None) != proof['tasks'][task]['previous']:
-                        raise HTTPException(409, 'A selected task changed since preview. Review again.')
-                    records.append({'id': secrets.token_hex(16), 'key': meta.key, 'owner_sub': owner,
-                        'owner_username': request.session.get('username'),
-                        'created_at': datetime.now(timezone.utc).isoformat(), 'corpus_version': CONFIG['latest'],
-                        'scorer_version': __version__, 'task_scorer_version': TASK_VERSION if task != 'alignment' else None,
-                        'corpus_fingerprint': corpus_fingerprint(corpus(CONFIG['latest'])),
-                        'task_fingerprint': task_fingerprint(corpus(CONFIG['latest'])) if task != 'alignment' else None,
-                        'metadata': meta.model_copy(update={'tasks': [task]}).model_dump(mode='json'),
-                        'replaces': proof['tasks'][task]['previous'],
-                        'predictions': [s.model_dump(mode='json') for s in submissions[task]]})
-                # One durable object is the atomic publication boundary for every selected task.
-                state['store'].put({'id': secrets.token_hex(16), 'batch_records': records})
-                state['records'].extend(records)
-                return {'published': True, 'tasks': meta.tasks, 'ids': [r['id'] for r in records]}
-        return await run_in_threadpool(commit_batch)
+        return await run_in_threadpool(commit_batch, meta, submissions, proof, owner,
+                                       request.session.get('username'))
+
+    @app.get('/api/v1/submissions/me', include_in_schema=False)
+    async def submission_identity(request: Request):
+        _, username = await bearer_identity(request)
+        return {'authenticated': True, 'username': username}
+
+    @app.post('/api/v1/submissions/preview', include_in_schema=False)
+    async def submission_preview(request: Request, files: Annotated[list[UploadFile], File()],
+                                 metadata: Annotated[str, Form()]):
+        owner, username = await bearer_identity(request)
+        meta, submissions, results, owners = await parse_batch(files, metadata)
+        complete = all(result['complete'] for result in results.values())
+        return {'account': {'username': username}, 'tasks': results, 'complete': complete,
+                'owned_by_another': bool(owners and owner not in owners),
+                'preview_token': signer.dumps(batch_proof(meta, submissions, results)) if complete else None}
+
+    @app.post('/api/v1/submissions/publish', include_in_schema=False)
+    async def submission_publish(request: Request, files: Annotated[list[UploadFile], File()],
+                                 metadata: Annotated[str, Form()], preview_token: Annotated[str, Form()],
+                                 confirmed: Annotated[bool, Form()] = False):
+        owner, username = await bearer_identity(request)
+        if not confirmed:
+            raise HTTPException(422, 'Review all selected tasks and confirm publication')
+        meta, submissions, results, _ = await parse_batch(files, metadata)
+        try:
+            proof = signer.loads(preview_token, max_age=3600)
+        except BadSignature:
+            raise HTTPException(409, 'Preview expired. Review your results again.') from None
+        if not all(result['complete'] for result in results.values()) or proof != batch_proof(
+                meta, submissions, results):
+            raise HTTPException(409, 'Files, tasks, or details changed. Preview all selected tasks again.')
+        return await run_in_threadpool(commit_batch, meta, submissions, proof, owner, username)
 
     static = ROOT / 'frontend' / 'dist'
     if static.exists():

@@ -23,3 +23,23 @@ Scorer, schemas and corpus tooling for the Quran recitation alignment benchmark.
 - Install by git tag, not PyPI: `pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.1.0"`.
 - License: CC BY 4.0 for code and annotations, not the audio.
 - `ruff check src tests` and `pytest -q` must pass (CI). Commit messages: `type(scope): what` (feat, fix, docs, test, chore).
+
+## Private submission API
+
+Keep this API out of the README, public documentation, frontend, and generated API documentation. Its routes use
+`include_in_schema=False`, and FastAPI's OpenAPI, Swagger, and ReDoc routes stay disabled.
+
+- Authenticate every call with `Authorization: Bearer <hf-token>`. The server resolves the token with
+  `HfApi().whoami()`, uses the returned Hugging Face user ID as the private owner key, and never stores the token.
+- Send `x-qab-request: 1` on POST requests.
+- `GET /api/v1/submissions/me` checks the token and returns the private Hugging Face username.
+- `POST /api/v1/submissions/preview` accepts multipart `files` plus a JSON string in the `metadata` form field. It
+  returns per-task validation/scores and a one-hour `preview_token` when the upload is complete.
+- `POST /api/v1/submissions/publish` accepts the same `files` and `metadata`, plus the exact `preview_token` and
+  `confirmed=true`. Publication is rejected if files, metadata, selected tasks, or replacement state changed.
+- `metadata.tasks` may contain any non-empty subset of `alignment`, `segmentation`, and `timing`. A single-task
+  upload may be flat. Multi-task uploads use `alignment/`, `segmentation/`, and `timing/` folders for the selected
+  tasks. All selected tasks publish atomically.
+- Metadata fields are `system`, `description`, `url`, private `email`, `user_parameters`, `hardware_class` (`cpu`,
+  `gpu`, or null), `hardware`, and `tasks`. CPU/GPU profiles and task replacements are independent under one system
+  owner.

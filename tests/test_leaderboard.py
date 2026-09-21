@@ -403,6 +403,64 @@ def test_batch_persistence_failure_does_not_publish_partial_results(tmp_path, mo
             assert client.get('/api/leaderboard', params={'task': task}).json()['rows'] == []
 
 
+def test_token_submission_api_auth_preview_publish_and_privacy(tmp_path, monkeypatch, cases, metadata):
+    store = Store(str(tmp_path))
+    monkeypatch.setenv('SESSION_SECRET', 'test-secret')
+    monkeypatch.delenv('SPACE_HOST', raising=False)
+    identity = [('hf-owner-id', 'private-hf-name')]
+    monkeypatch.setattr('leaderboard.app.verify_hf_token', lambda token: identity[0])
+    files = payload(predictions(cases))
+    data = {'metadata': json.dumps(metadata)}
+    with TestClient(create_app(cases, store)) as client:
+        client.headers['x-qab-request'] = '1'
+        assert client.get('/api/v1/submissions/me').status_code == 401
+        headers = {'Authorization': 'Bearer hf_private_test_token'}
+        assert client.get('/api/v1/submissions/me', headers=headers).json() == {
+            'authenticated': True, 'username': 'private-hf-name'}
+        result = client.post('/api/v1/submissions/preview', headers=headers, data=data, files=files)
+        assert result.status_code == 200, result.text
+        preview = result.json()
+        assert preview['complete'] and set(preview['tasks']) == {'alignment'}
+        assert preview['account'] == {'username': 'private-hf-name'}
+        assert preview['preview_token'] and 'hf_private_test_token' not in result.text
+        publish_data = {**data, 'preview_token': preview['preview_token'], 'confirmed': 'true'}
+        result = client.post('/api/v1/submissions/publish', headers=headers, data=publish_data, files=files)
+        assert result.status_code == 200, result.text
+        assert result.json()['tasks'] == ['alignment']
+        assert 'hf_private_test_token' not in json.dumps(store.records())
+        identity[0] = ('another-hf-id', 'another-private-name')
+        preview = client.post('/api/v1/submissions/preview', headers=headers, data=data, files=files).json()
+        assert preview['owned_by_another']
+        result = client.post('/api/v1/submissions/publish', headers=headers,
+                             data={**data, 'preview_token': preview['preview_token'], 'confirmed': 'true'},
+                             files=files)
+        assert result.status_code == 403
+        assert client.get('/api/openapi.json').status_code == 404
+        assert client.get('/api/docs').status_code == 404
+        assert client.get('/api/redoc').status_code == 404
+
+
+def test_token_submission_api_accepts_all_task_subsets(tmp_path, monkeypatch, cases, metadata):
+    monkeypatch.setenv('SESSION_SECRET', 'test-secret')
+    monkeypatch.delenv('SPACE_HOST', raising=False)
+    monkeypatch.setattr('leaderboard.app.verify_hf_token', lambda token: ('hf-owner-id', 'private-hf-name'))
+    metadata['tasks'] = ['alignment', 'segmentation', 'timing']
+    files = batch_payload(cases)
+    data = {'metadata': json.dumps(metadata)}
+    headers = {'Authorization': 'Bearer hf_private_test_token'}
+    store = Store(str(tmp_path))
+    with TestClient(create_app(cases, store)) as client:
+        client.headers['x-qab-request'] = '1'
+        preview = client.post('/api/v1/submissions/preview', headers=headers, data=data, files=files).json()
+        assert preview['complete'] and set(preview['tasks']) == set(metadata['tasks'])
+        result = client.post('/api/v1/submissions/publish', headers=headers,
+                             data={**data, 'preview_token': preview['preview_token'], 'confirmed': 'true'},
+                             files=files)
+        assert result.status_code == 200, result.text
+        assert set(result.json()['tasks']) == set(metadata['tasks'])
+        assert len(store.records()) == 3
+
+
 def test_selected_version_refreshes_all_dataset_fields(tmp_path, monkeypatch, cases):
     import importlib
     module = importlib.import_module('leaderboard.app')
