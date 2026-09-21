@@ -152,6 +152,11 @@ def run_alignment_case(
                 if response.status_code >= 400:
                     raise RuntimeError(f"HTTP {response.status_code}: {response.text[:1000]}")
                 body = parse_sse(response)
+            actual_device = body.get("device")
+            if actual_device != device:
+                raise RuntimeError(
+                    f"requested {device} but Space returned {actual_device or 'no device'}"
+                )
             record = {
                 "case_id": case.id,
                 "model": model,
