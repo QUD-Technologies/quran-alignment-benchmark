@@ -14,6 +14,7 @@ import shutil
 import sys
 import threading
 import time
+import zipfile
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +40,7 @@ from qab.tasks import (  # noqa: E402
 SPACE = "https://hetchyy-quranic-universal-aligner-dev.hf.space/api/v1"
 DATASET_ID = "qud-technologies/quran-alignment-benchmark"
 DATASET_SHA = "4c6c520ee85cd6363824e1e7a4dd40ed139020dd"
-MODELS = {"Base": "hetchyy/tibyan-base-v1", "Large": "hetchyy/tibyan-large-v1"}
+MODELS = {"Base": "hetchyy/tibyan-base-v1"}
 TIMEOUT_S = 4 * 60 * 60
 MAX_ATTEMPTS = 8
 PRINT_LOCK = threading.Lock()
@@ -245,6 +246,19 @@ def span(start: str | None, end: str | None) -> str | None:
     return f"{start}-{end}"
 
 
+def processing_seconds(record: dict[str, Any]) -> float:
+    """Queue-free server runtime stamped by the deployed Space."""
+    runtime = ((record.get("response") or {}).get("_meta") or {}).get("runtime") or {}
+    processing = runtime.get("processing_seconds")
+    queue = runtime.get("queue_seconds")
+    total = runtime.get("total_seconds")
+    if not all(isinstance(value, (int, float)) for value in (processing, queue, total)):
+        raise ValueError(f"{record.get('case_id')}: response has no server runtime metadata")
+    if abs(float(processing) + float(queue) - float(total)) > 0.05:
+        raise ValueError(f"{record.get('case_id')}: inconsistent server runtime metadata")
+    return float(processing)
+
+
 def alignment_submission(case: Any, record: dict[str, Any], diagnostics: Counter) -> Submission:
     adapted = []
     for row in record["response"].get("segments", []):
@@ -267,7 +281,7 @@ def alignment_submission(case: Any, record: dict[str, Any], diagnostics: Counter
         })
     return Submission(
         case_id=case.id,
-        runtime_seconds=record["elapsed_s"],
+        runtime_seconds=processing_seconds(record),
         segments=adapted,
     )
 
@@ -291,7 +305,7 @@ def segmentation_submission(
     intervals = [value for value in intervals if value["end_s"] > value["start_s"]]
     return SegmentationSubmission(
         case_id=case.id,
-        runtime_seconds=record["elapsed_s"],
+        runtime_seconds=processing_seconds(record),
         segments=intervals,
     )
 
@@ -346,7 +360,12 @@ def timing_submission(case: Any, record: dict[str, Any], diagnostics: Counter) -
     return TimingSubmission(case_id=case.id, clips=clips)
 
 
-def score_all(cases: list[Any], records: list[dict[str, Any]], run_dir: Path) -> dict[str, Any]:
+def score_all(
+    cases: list[Any],
+    records: list[dict[str, Any]],
+    run_dir: Path,
+    device: str,
+) -> dict[str, Any]:
     align_by_model = {
         model: {record["case_id"]: record for record in records if record.get("model") == model}
         for model in MODELS
@@ -364,8 +383,11 @@ def score_all(cases: list[Any], records: list[dict[str, Any]], run_dir: Path) ->
         meta = SubmissionMeta(
             system=f"RAS dev {model}",
             version=f"{MODELS[model]} via dev Space",
-            hardware_class="cpu",
-            hardware="Hugging Face Space CPU; exact host CPU is not exposed by the API",
+            hardware_class=device.lower(),
+            hardware=(
+                "Hugging Face Space CPU; exact host CPU is not exposed by the API"
+                if device == "CPU" else "Hugging Face ZeroGPU A10G"
+            ),
         )
         reports["alignment"][model] = evaluate(cases, alignment, meta, corpus_version="v1")
         reports["segmentation"][model] = evaluate_task(
@@ -384,7 +406,7 @@ def score_all(cases: list[Any], records: list[dict[str, Any]], run_dir: Path) ->
         "space": SPACE,
         "dataset": {"id": DATASET_ID, "revision": DATASET_SHA, "config": "v1", "cases": len(cases)},
         "models": MODELS,
-        "requested_device": "CPU",
+        "requested_device": device,
         "reports": reports,
         "adapter_diagnostics": adapter_diagnostics,
         "performance": performance(records, cases),
@@ -404,12 +426,14 @@ def performance(records: list[dict[str, Any]], cases: list[Any]) -> dict[str, An
     }
     for model in MODELS:
         selected = [r for r in records if r.get("model") == model]
-        elapsed = sum(r["elapsed_s"] for r in selected)
+        elapsed = sum(processing_seconds(r) for r in selected)
         result[f"alignment_{model.lower()}"] = {
-            "sum_request_seconds": elapsed,
+            "sum_processing_seconds": elapsed,
             "rtf": elapsed / total_audio,
-            "median_request_seconds": sorted(r["elapsed_s"] for r in selected)[len(selected) // 2],
-            "max_request_seconds": max(r["elapsed_s"] for r in selected),
+            "median_processing_seconds": sorted(processing_seconds(r) for r in selected)[len(selected) // 2],
+            "max_processing_seconds": max(processing_seconds(r) for r in selected),
+            "sum_queue_seconds": sum(r["response"]["_meta"]["runtime"]["queue_seconds"] for r in selected),
+            "sum_client_seconds": sum(r["elapsed_s"] for r in selected),
         }
     selected = [r for r in records if r.get("model") is None]
     elapsed = sum(r["elapsed_s"] for r in selected)
@@ -420,6 +444,34 @@ def performance(records: list[dict[str, Any]], cases: list[Any]) -> dict[str, An
         "max_request_seconds": max(r["elapsed_s"] for r in selected),
     }
     return result
+
+
+def write_submission_zip(
+    cases: list[Any], records: list[dict[str, Any]], run_dir: Path, device: str,
+) -> Path:
+    """Write one three-task ZIP accepted by the leaderboard upload adapter."""
+    by_case = {record["case_id"]: record for record in records if record.get("model") == "Base"}
+    timing_by_case = {record["case_id"]: record for record in records if record.get("model") is None}
+    diagnostics = Counter()
+    archive = run_dir / f"tibyan-base-v1-{device.lower()}-qab-v1.zip"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
+        for case in cases:
+            alignment = alignment_submission(case, by_case[case.id], diagnostics)
+            segmentation = segmentation_submission(case, by_case[case.id], diagnostics)
+            timing = timing_submission(case, timing_by_case[case.id], diagnostics)
+            output.writestr(
+                f"alignment/{case.id}.json",
+                alignment.model_dump_json(indent=1, exclude_none=True),
+            )
+            output.writestr(
+                f"segmentation/{case.id}.json",
+                segmentation.model_dump_json(indent=1, exclude_none=True),
+            )
+            output.writestr(
+                f"timing/{case.id}.json",
+                timing.model_dump_json(indent=1, exclude_none=True),
+            )
+    return archive
 
 
 CSS = """
@@ -438,73 +490,43 @@ def num(value: Any, digits: int = 3) -> str:
 
 def render_report(evidence: dict[str, Any], path: Path) -> None:
     reports = evidence["reports"]
-    performance_data = evidence["performance"]
-    align_rows = "".join(
-        f"<tr><td>{model}</td><td><code>{html.escape(repo)}</code></td>"
-        f"<td>{pct(reports['alignment'][model]['headline']['words_f1'])}</td>"
-        f"<td>{pct(reports['alignment'][model]['pooled']['words_found'])}</td>"
-        f"<td>{pct(reports['alignment'][model]['pooled']['words_correct'])}</td>"
-        f"<td>{pct(reports['alignment'][model]['headline']['clean_segments'])}</td>"
-        f"<td>{pct(reports['alignment'][model]['headline']['repeats_f1'])}</td>"
-        f"<td>{num(reports['alignment'][model]['headline']['rtf'])}</td></tr>"
-        for model, repo in MODELS.items()
-    )
-    seg_rows = "".join(
-        f"<tr><td>{model}</td><td>{pct(reports['segmentation'][model]['headline']['segments_f1'])}</td>"
-        f"<td>{pct(reports['segmentation'][model]['headline']['segments_found'])}</td>"
-        f"<td>{pct(reports['segmentation'][model]['headline']['segments_correct'])}</td>"
-        f"<td>{pct(reports['segmentation'][model]['headline']['boundaries_f1'])}</td>"
-        f"<td>{num(reports['segmentation'][model]['headline']['rtf'])}</td></tr>"
-        for model in MODELS
-    )
+    device = evidence["requested_device"]
+    alignment = reports["alignment"]["Base"]
+    segmentation = reports["segmentation"]["Base"]
     timing = reports["timing"]
-    perf_rows = "".join(
-        f"<tr><td>{label}</td><td>{values['sum_request_seconds'] / 60:.1f} min</td>"
-        f"<td>{values['median_request_seconds']:.1f} s</td><td>{values['max_request_seconds']:.1f} s</td>"
-        f"<td>{values['rtf']:.3f}</td></tr>"
-        for label, values in (
-            ("Alignment Base", performance_data["alignment_base"]),
-            ("Alignment Large", performance_data["alignment_large"]),
-            ("Timing", performance_data["timing"]),
-        )
-    )
-    diagnostics = html.escape(json.dumps(evidence["adapter_diagnostics"], indent=2))
+    perf = evidence["performance"]["alignment_base"]
     generated = evidence["generated_at"][:10]
+    diagnostics = html.escape(json.dumps(evidence["adapter_diagnostics"], indent=2))
     document = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RAS dev Space benchmark report</title><style>{CSS}</style></head><body><div class="wrap">
-<header class="hero"><div class="kicker">Benchmark Report &middot; QAB v1</div><h1>RAS dev Space on all three benchmarks</h1>
-<p class="sub">Direct CPU-only API evaluation of the deployed Base and Large alignment modes, plus the shared supplied-reference timing service, across all 16 recordings.</p>
-<div class="meta"><span class="tag"><b>Status:</b> Complete</span><span class="tag"><b>Date:</b> {generated}</span><span class="tag"><b>Audio:</b> {performance_data['audio_seconds'] / 60:.1f} min</span><span class="tag"><b>Device:</b> CPU requested and returned</span></div></header>
-<nav class="toc"><a href="#summary"><span class="n">1</span>Summary</a><a href="#alignment"><span class="n">2</span>Alignment</a><a href="#segmentation"><span class="n">3</span>Waqf segmentation</a><a href="#timing"><span class="n">4</span>Word timing</a><a href="#performance"><span class="n">5</span>Performance</a><a href="#method"><span class="n">6</span>Method and adapters</a></nav>
-<h2 id="summary"><span class="hn">1</span>Summary</h2><p class="lead">The primary scores and the interpretation constraints that affect comparisons.</p>
-<div class="grid2"><div class="card"><div class="muted">Best alignment words F1</div><div class="metric">{pct(max(reports['alignment'][m]['headline']['words_f1'] for m in MODELS))}</div></div><div class="card"><div class="muted">Shared timing words within 300 ms</div><div class="metric">{pct(timing['headline']['words_timed'])}</div></div></div>
-<ul class="clean"><li><b>Base and Large alignment.</b> Base scores {pct(reports['alignment']['Base']['headline']['words_f1'])}; Large scores {pct(reports['alignment']['Large']['headline']['words_f1'])}, a {(reports['alignment']['Large']['headline']['words_f1'] - reports['alignment']['Base']['headline']['words_f1']) * 100:+.03f} percentage-point difference.</li><li><b>Difficult structure.</b> Noisy-audio words F1 is {pct(reports['alignment']['Large']['slices']['noisy=true']['pooled']['words_f1'])} for Large versus {pct(reports['alignment']['Base']['slices']['noisy=true']['pooled']['words_f1'])} for Base; repeat F1 is {pct(reports['alignment']['Large']['headline']['repeats_f1'])} versus {pct(reports['alignment']['Base']['headline']['repeats_f1'])}.</li><li><b>Segmentation.</b> Segments F1 is {pct(reports['segmentation']['Large']['headline']['segments_f1'])} for Large versus {pct(reports['segmentation']['Base']['headline']['segments_f1'])} for Base.</li><li><b>Timing is model-independent here.</b> The shared timing service places {pct(timing['headline']['words_timed'])} of words within 300 ms, with {pct(timing['headline']['clean_clips'])} of complete clips passing at that tolerance and {timing['diagnostics']['mean_boundary_error_ms']:.1f} ms mean boundary error.</li></ul>
-<div class="callout warn"><b>Base is an API policy.</b> The dev Space may retry a low-confidence Base result with Large. The public API provides no switch to disable that behavior and does not identify retried cases, so this report compares the deployed Base and Large modes, not guaranteed pure-model inference.</div>
-<h2 id="alignment"><span class="hn">2</span>Alignment</h2><p class="lead">Word claims are pooled across the complete v1 corpus; higher is better except RTF.</p>
-<table><thead><tr><th>Mode</th><th>Model ID</th><th>Words F1</th><th>Words found</th><th>Words correct</th><th>Clean segments</th><th>Repeats F1</th><th>RTF</th></tr></thead><tbody>{align_rows}</tbody></table>
-<h2 id="segmentation"><span class="hn">3</span>Waqf segmentation</h2><p class="lead">RAS segment intervals are projected to the benchmark's non-overlapping speech-interval schema.</p>
-<table><thead><tr><th>Mode</th><th>Segments F1</th><th>Segments found</th><th>Segments correct</th><th>Boundaries F1</th><th>RTF</th></tr></thead><tbody>{seg_rows}</tbody></table>
-<h2 id="timing"><span class="hn">4</span>Word timing</h2><p class="lead">The timing task supplies reviewed clips and references, so it exercises the shared MFA timing endpoint and has no Base/Large ASR axis.</p>
-<div class="grid2"><div class="card"><div class="muted">Words timed correctly at 300 ms</div><div class="metric">{pct(timing['headline']['words_timed'])}</div></div><div class="card"><div class="muted">Entire clips clean at 300 ms</div><div class="metric">{pct(timing['headline']['clean_clips'])}</div></div></div>
+<title>Tibyan Base {device} benchmark</title><style>{CSS}</style></head><body><div class="wrap">
+<header class="hero"><div class="kicker">Benchmark Report &middot; QAB v1</div><h1>Tibyan Base on {device}</h1>
+<p class="sub">All 16 recordings, all three leaderboard tasks, with queue-free server runtime and align-v1 adapters.</p>
+<div class="meta"><span class="tag"><b>Status:</b> Complete</span><span class="tag"><b>Date:</b> {generated}</span><span class="tag"><b>Audio:</b> {evidence['performance']['audio_seconds']/60:.1f} min</span><span class="tag"><b>Device:</b> {device}</span></div></header>
+<nav class="toc"><a href="#scores"><span class="n">1</span>Scores</a><a href="#timing"><span class="n">2</span>Word timing</a><a href="#performance"><span class="n">3</span>Performance</a><a href="#method"><span class="n">4</span>Method</a></nav>
+<h2 id="scores"><span class="hn">1</span>Alignment and segmentation</h2><p class="lead">Pooled scores over the immutable v1 corpus.</p>
+<table><thead><tr><th>Words F1</th><th>Words found</th><th>Words correct</th><th>Confidence skill</th><th>Clean segments</th><th>Repeats F1</th></tr></thead><tbody><tr><td>{pct(alignment['headline']['words_f1'])}</td><td>{pct(alignment['pooled']['words_found'])}</td><td>{pct(alignment['pooled']['words_correct'])}</td><td>{num(alignment['headline']['confidence_skill'])}</td><td>{pct(alignment['headline']['clean_segments'])}</td><td>{pct(alignment['headline']['repeats_f1'])}</td></tr></tbody></table>
+<table><thead><tr><th>Segments F1</th><th>Segments found</th><th>Segments correct</th><th>Boundaries F1</th></tr></thead><tbody><tr><td>{pct(segmentation['headline']['segments_f1'])}</td><td>{pct(segmentation['headline']['segments_found'])}</td><td>{pct(segmentation['headline']['segments_correct'])}</td><td>{pct(segmentation['headline']['boundaries_f1'])}</td></tr></tbody></table>
+<h2 id="timing"><span class="hn">2</span>Word timing</h2><p class="lead">Reviewed clip boundaries and references are supplied to the shared timing service.</p>
+<div class="grid2"><div class="card"><div class="muted">Words within 300 ms</div><div class="metric">{pct(timing['headline']['words_timed'])}</div></div><div class="card"><div class="muted">Clean clips at 300 ms</div><div class="metric">{pct(timing['headline']['clean_clips'])}</div></div></div>
 <table><thead><tr><th>Tolerance</th><th>Words timed</th><th>Clean clips</th></tr></thead><tbody>{''.join(f'<tr><td>{float(t)*1000:.0f} ms</td><td>{pct(v["words_timed"])}</td><td>{pct(v["clean_clips"])}</td></tr>' for t,v in timing['diagnostics']['tolerances'].items())}</tbody></table>
-<h2 id="performance"><span class="hn">5</span>Performance</h2><p class="lead">The complete concurrent run took approximately {performance_data['concurrent_wall_seconds'] / 60:.1f} minutes. Request durations include Space queueing, upload, inference and response transfer; sums exceed wall time because requests ran concurrently.</p>
-<table><thead><tr><th>Path</th><th>Sum request time</th><th>Median request</th><th>Longest request</th><th>Observed latency RTF</th></tr></thead><tbody>{perf_rows}</tbody></table>
-<div class="callout warn"><b>Do not read the latency RTF as isolated model speed.</b> All requests shared one concurrent Space queue, so queue order makes Large appear faster in aggregate. These numbers describe this batch's end-to-end hosted latency, including upload and waiting.</div>
-<h2 id="method"><span class="hn">6</span>Method and adapters</h2><p class="lead">The exact projections used to translate RAS responses into the benchmark's three strict schemas.</p>
-<ul class="clean"><li><b>Corpus.</b> <code>{DATASET_ID}</code>, config <code>v1</code>, revision <code>{DATASET_SHA}</code>; all 16 recordings and {performance_data['audio_seconds']/60:.1f} minutes.</li><li><b>Concurrency.</b> Both model batches and all timing calls were submitted concurrently; the Space owned scheduling and queueing.</li><li><b>Alignment.</b> Quran rows map the API's explicit <code>ref_from</code>/<code>ref_to</code> primary range to one benchmark span. Basmala and Isti'adha map to their benchmark class token. When one RAS row also reports internal repeat/wrap ranges, QAB cannot represent them without internal timestamps; the primary span is retained and QAB's repeat metric records the lost occurrences.</li><li><b>Segmentation.</b> Public RAS segment times become speech intervals. Any overlap is split at its midpoint solely to satisfy the benchmark's non-overlap schema.</li><li><b>Timing.</b> Reviewed segment bounds and supplied references are sent to <code>/timestamps</code>; returned times are already clip-relative. Missing or partial results become null word timings in their supplied positions.</li><li><b>Runtime.</b> CPU was explicitly requested. The Space does not expose its CPU model, so hardware is reported as hosted Space CPU.</li></ul>
+<h2 id="performance"><span class="hn">3</span>Performance</h2><p class="lead">RTF uses the Space's processing time after subtracting its measured queue wait.</p>
+<table><thead><tr><th>Queue-free RTF</th><th>Processing sum</th><th>Queue sum</th><th>Client sum</th><th>Median processing</th><th>Longest processing</th></tr></thead><tbody><tr><td>{num(perf['rtf'])}</td><td>{perf['sum_processing_seconds']/60:.1f} min</td><td>{perf['sum_queue_seconds']/60:.1f} min</td><td>{perf['sum_client_seconds']/60:.1f} min</td><td>{perf['median_processing_seconds']:.1f} s</td><td>{perf['max_processing_seconds']:.1f} s</td></tr></tbody></table>
+<h2 id="method"><span class="hn">4</span>Method and adapters</h2><p class="lead">The transformations used to fit the API result to each leaderboard schema.</p>
+<ul class="clean"><li><b>Recognition.</b> Sole model <code>hetchyy/tibyan-base-v1</code>; the checkpoint tokenizer and all Quran references, n-grams, specials and matching costs use align-v1.</li><li><b>Alignment.</b> The explicit primary <code>ref_from</code>/<code>ref_to</code> becomes one QAB span. Internal wrap ranges remain unclaimed because the schema has no internal timestamps.</li><li><b>Segmentation.</b> Returned speech intervals are sorted; any overlap is split at its midpoint to satisfy the non-overlap contract.</li><li><b>Timing.</b> Reviewed clips and references are sent to <code>/timestamps</code>. Partial lists are occurrence-mapped in order; missing words remain null.</li><li><b>Runtime.</b> <code>_meta.runtime.processing_seconds</code> is used for alignment and segmentation. Client upload, response transfer and Space queue time are excluded.</li></ul>
 <div class="callout"><b>Adapter diagnostics.</b><pre>{diagnostics}</pre></div>
-<hr><p class="footnote">Generated from retained raw API responses and the repository's own <code>qab.report.evaluate</code> / <code>evaluate_task</code> scorers. Full machine-readable evidence is adjacent as <code>results.json</code>.</p>
+<hr><p class="footnote">Generated from retained raw API responses and the benchmark repository's own scorers. Machine-readable evidence and the submission ZIP are adjacent.</p>
 </div></body></html>"""
     path.write_text(document, encoding="utf-8")
 
-
 def main() -> int:
+    global SPACE
     parser = argparse.ArgumentParser()
     parser.add_argument("--parquet", type=Path, required=True)
     parser.add_argument("--out", type=Path, default=ROOT / ".local" / "ras-benchmark" / "run")
     parser.add_argument("--workers", type=int, default=48)
     parser.add_argument("--device", choices=("CPU", "GPU"), default="CPU")
+    parser.add_argument("--space", default=SPACE)
     parser.add_argument("--models", nargs="+", choices=tuple(MODELS), default=list(MODELS))
     parser.add_argument("--cases", nargs="+", help="run only these case IDs")
     parser.add_argument(
@@ -513,6 +535,7 @@ def main() -> int:
         help="reuse raw timing responses from another completed run directory",
     )
     args = parser.parse_args()
+    SPACE = args.space.rstrip("/")
     args.out.mkdir(parents=True, exist_ok=True)
     if args.reuse_timing_from is not None:
         source = args.reuse_timing_from / "raw" / "timing"
@@ -574,11 +597,13 @@ def main() -> int:
         for item in missing:
             log(f"  {item}")
         return 0
-    evidence = score_all(cases, records, args.out)
+    evidence = score_all(cases, records, args.out, args.device)
     atomic_json(args.out / "results.json", evidence)
     render_report(evidence, args.out / "report.html")
+    archive = write_submission_zip(cases, records, args.out, args.device)
     log(f"complete in {evidence['performance']['concurrent_wall_seconds'] / 60:.1f} min")
     log(str(args.out / "report.html"))
+    log(str(archive))
     return 0
 
 
