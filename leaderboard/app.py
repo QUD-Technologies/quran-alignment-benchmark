@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import io
 import json
 import os
@@ -34,7 +35,7 @@ from qab.schema import Strict, Submission, SubmissionMeta
 from qab.scoring import score_case
 from qab.tasks import MODELS, PRIMARY, TASK_VERSION, evaluate_task, fingerprint as task_fingerprint
 
-from .data import CONFIG, load_bundle
+from .data import CONFIG, dataset_revision, load_bundle
 from .drafts import DraftHandoffs
 from .storage import Store
 
@@ -265,12 +266,17 @@ async def bearer_identity(request: Request) -> tuple[str, str]:
     return await run_in_threadpool(verify_hf_token, token)
 
 
+log = logging.getLogger(__name__)
+REFRESH_S = 60  # how often the dataset commit is checked for corpus edits
+
+
 def create_app(cases_override=None, store_override=None):
     secret = os.environ.get('SESSION_SECRET') or secrets.token_hex(32)
     signer = URLSafeTimedSerializer(secret, salt='qab-preview')
     handoffs = DraftHandoffs()
     corpus_lock = threading.Lock()
     refreshed = {}
+    revisions = {}
     publish_lock = threading.Lock()
     compute_lock = threading.Semaphore(2)
     state = {'cases': {}, 'metadata': {}, 'records': [], 'ready': False}
@@ -286,8 +292,15 @@ def create_app(cases_override=None, store_override=None):
                 state['cases'][version], state['metadata'][version] = await run_in_threadpool(
                     load_bundle, version, os.getenv('QAB_CASES_DIR'))
         refreshed.update({version: time.monotonic() for version in CONFIG['versions']})
+        if refreshable():
+            for version in CONFIG['versions']:
+                try:
+                    revisions[version] = await run_in_threadpool(dataset_revision, version)
+                except Exception:
+                    log.exception('Dataset revision lookup failed for %s', version)
         state['records'] = await run_in_threadpool(state['store'].records)
         state['ready'] = True
+        threading.Thread(target=prewarm, daemon=True).start()
         yield
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -319,16 +332,43 @@ def create_app(cases_override=None, store_override=None):
             response.headers['Cache-Control'] = 'no-store'
         return response
 
+    def refreshable():
+        return not cases_override and not os.getenv('QAB_CASES_DIR')
+
+    def refresh(version):
+        """Reload the corpus off the request path, only when the dataset commit changed."""
+        try:
+            revision = dataset_revision(version)
+            if revision == revisions.get(version):
+                return
+            cases, metadata = load_bundle(version)
+            changed = cases != state['cases'][version]
+            state['cases'][version], state['metadata'][version] = cases, metadata
+            revisions[version] = revision
+            if changed:
+                filtered.cache_clear()
+                prewarm(version)
+        except Exception:
+            log.exception('Corpus refresh failed for %s; serving the previous copy', version)
+        finally:
+            corpus_lock.release()
+
+    def prewarm(*versions):
+        """Score every task over the full corpus so the default view never waits on a cold cache."""
+        for version in versions or CONFIG['versions']:
+            for task in PRIMARY:
+                try:
+                    board(version=version, task=task, ids=None)
+                except Exception:
+                    log.exception('Prewarm failed for %s/%s', version, task)
+
     def corpus(version):
         if version not in state['cases']:
             raise HTTPException(404, 'Unknown corpus version')
-        if not cases_override and not os.getenv('QAB_CASES_DIR') and time.monotonic() - refreshed[version] >= 60:
-            with corpus_lock:
-                if time.monotonic() - refreshed[version] >= 60:
-                    cases, metadata = load_bundle(version)
-                    state['cases'][version], state['metadata'][version] = cases, metadata
-                    refreshed[version] = time.monotonic()
-                    filtered.cache_clear()
+        if (refreshable() and time.monotonic() - refreshed[version] >= REFRESH_S
+                and corpus_lock.acquire(blocking=False)):
+            refreshed[version] = time.monotonic()
+            threading.Thread(target=refresh, args=(version,), daemon=True).start()
         return state['cases'][version]
 
     def current(key, version, profile=None, task='alignment'):

@@ -12,6 +12,12 @@ def load_corpus(version, cases_dir=None):
     return load_bundle(version, cases_dir)[0]
 
 
+def dataset_revision(version):
+    """Commit sha of the dataset repo: one small API call, so a refresh can skip an unchanged parquet."""
+    from huggingface_hub import HfApi
+    return HfApi().dataset_info(CONFIG['versions'][version]['dataset']).sha
+
+
 def load_bundle(version, cases_dir=None):
     if cases_dir:
         return load_cases(cases_dir=cases_dir), []

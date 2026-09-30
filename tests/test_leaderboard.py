@@ -463,6 +463,13 @@ def test_token_submission_api_accepts_all_task_subsets(tmp_path, monkeypatch, ca
         assert len(store.records()) == 3
 
 
+def wait_for_refresh(module):
+    import threading
+    for thread in threading.enumerate():
+        if getattr(thread, '_target', None) and thread._target.__name__ == 'refresh':
+            thread.join(5)
+
+
 def test_selected_version_refreshes_all_dataset_fields(tmp_path, monkeypatch, cases):
     import importlib
     module = importlib.import_module('leaderboard.app')
@@ -475,11 +482,20 @@ def test_selected_version_refreshes_all_dataset_fields(tmp_path, monkeypatch, ca
         return cases, [{'id': c.id, 'description': 'Latest description ' + str(len(loads)),
                         'passages': 'Current dataset passages'} for c in cases]
     monkeypatch.setattr(module, 'load_bundle', load)
+    revision = ['a']
+    monkeypatch.setattr(module, 'dataset_revision', lambda version: revision[0])
     with TestClient(create_app(store_override=Store(str(tmp_path)))) as client:
         first = client.get('/api/corpus').json()
         assert first['recordings'][0]['description'] == 'Latest description 1'
         assert 'revision' not in first
         clock[0] = 61
+        client.get('/api/corpus')
+        wait_for_refresh(module)
+        assert loads == ['v1'], 'unchanged dataset commit must not reload the parquet'
+        revision[0] = 'b'
+        clock[0] = 122
+        client.get('/api/corpus')
+        wait_for_refresh(module)
         second = client.get('/api/corpus').json()
         assert second['recordings'][0]['description'] == 'Latest description 2'
         assert second['recordings'][0]['passages'] == 'Current dataset passages'
