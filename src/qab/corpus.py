@@ -15,7 +15,7 @@ from .schema import Case, Submission, SubmissionMeta
 DATASET = "hetchyy/quran-alignment-benchmark"
 SPLIT = "test"
 CASE_FIELDS = ("id", "riwayah", "reciter", "description", "style", "content", "noisy", "multi_surah")
-_CORPUS_EXTRA = "loading from the Hub needs the corpus extra: pip install 'qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark'"
+_CORPUS_EXTRA = "loading from the Hub needs the corpus extra: pip install 'qab[corpus] @ git+https://github.com/QUD-Technologies/quran-alignment-benchmark'"
 
 
 def case_from_row(row: dict[str, Any]) -> Case:

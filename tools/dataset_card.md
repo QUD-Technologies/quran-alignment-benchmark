@@ -17,9 +17,9 @@ size_categories:
 
 # Quran Recitation Alignment Benchmark
 
-[![GitHub](https://img.shields.io/badge/GitHub-quran--alignment--benchmark-black?logo=github)](https://github.com/Hetchy/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard)
+[![GitHub](https://img.shields.io/badge/GitHub-quran--alignment--benchmark-black?logo=github)](https://github.com/QUD-Technologies/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard)
 
-Audio recordings of Quran recitation with a reviewed word-level ground truth: every recited word, in the order it was recited, with its start and end time, plus the reviewed segmentation and non-Quran regions. This is the corpus behind the [Quran Recitation Alignment Benchmark](https://github.com/Hetchy/quran-alignment-benchmark); the task, scoring rules, leaderboard and submission format are documented there, not here.
+Audio recordings of Quran recitation with a reviewed word-level ground truth: every recited word, in the order it was recited, with its start and end time, plus the reviewed segmentation and non-Quran regions. This is the corpus behind the [Quran Recitation Alignment Benchmark](https://github.com/QUD-Technologies/quran-alignment-benchmark); the task, scoring rules, leaderboard and submission format are documented there, not here.
 
 16 recordings · 357 minutes · 18,421 recited words · Hafs ʿan ʿĀṣim · murattal, mujawwad, hadr and muallim · studio, prayer and teaching captures.
 
@@ -57,7 +57,7 @@ qab score submissions/ --corpus v1     # the same report the leaderboard shows
 | `truth` | `words[{word, start_s, end_s}]` and `non_quran[{start_s, end_s}]`; `word` is `S:A:W` (chapter:verse:word, Hafs numbering) or `Basmala:k` / `Isti'adha:k` |
 | `segments` | the reviewed segmentation, edges from the first and last word times |
 
-Times are seconds from the start of the audio. A repeated word appears once per recitation. Full column definitions, annotation method and known gaps: [docs/CORPUS.md](https://github.com/Hetchy/quran-alignment-benchmark/blob/main/docs/CORPUS.md).
+Times are seconds from the start of the audio. A repeated word appears once per recitation. Full column definitions, annotation method and known gaps: [docs/CORPUS.md](https://github.com/QUD-Technologies/quran-alignment-benchmark/blob/main/docs/CORPUS.md).
 
 ## Versioning
 
@@ -68,9 +68,9 @@ A config is immutable once a score has been published against it. A re-annotatio
 CC BY 4.0 for the annotations (`truth`, `segments`) and descriptive columns, and for the benchmark repository. The audio recordings are not covered by this license.
 ## Corpus issues and new audio
 
-[Report an audio or ground-truth problem](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
+[Report an audio or ground-truth problem](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
 
-To [suggest new audio](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
+To [suggest new audio](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
 
 - An audio link or file.
 - The reciter's name.

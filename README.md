@@ -145,7 +145,7 @@ In Hafs, verse 1:1 of al-Fatiha is the Basmala, and the same text opens every ot
 ## Running your system and scoring locally
 
 ```bash
-pip install "qab[corpus] @ git+https://github.com/Hetchy/quran-alignment-benchmark@v0.2.1"
+pip install "qab[corpus] @ git+https://github.com/QUD-Technologies/quran-alignment-benchmark@v0.2.1"
 
 qab fetch --corpus v1 --out corpus/          # <id>.mp3 and <id>.json (the ground truth) per recording
 # run your system over corpus/*.mp3 and write submissions/<id>.json
@@ -182,9 +182,9 @@ Inputs to the system are audio only. Publicly exposed user controls such as sile
 
 ## Corpus issues and new audio
 
-[Report an audio or ground-truth problem](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
+[Report an audio or ground-truth problem](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
 
-To [suggest new audio](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
+To [suggest new audio](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
 
 - An audio link or file.
 - The reciter's name.

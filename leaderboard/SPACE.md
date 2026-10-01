@@ -14,15 +14,15 @@ short_description: Compare Quran recitation alignment systems
 
 Compare systems, explore the dataset, understand the metrics, and submit predictions using the four tabs in the app. Alignment confidence follows a consumer contract: green segments are intended to be safe to use, amber segments should be reviewed, and red segments are probably incorrect.
 
-[Dataset](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) · [Scorer and local scoring](https://github.com/Hetchy/quran-alignment-benchmark)
+[Dataset](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) · [Scorer and local scoring](https://github.com/QUD-Technologies/quran-alignment-benchmark)
 
 Prediction files and contact information are stored privately. Public results contain scores and the system details supplied by the submitter.
 
 ## Corpus issues and new audio
 
-[Report an audio or ground-truth problem](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
+[Report an audio or ground-truth problem](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=corpus-issue.yml) through a GitHub issue.
 
-To [suggest new audio](https://github.com/Hetchy/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
+To [suggest new audio](https://github.com/QUD-Technologies/quran-alignment-benchmark/issues/new?template=new-audio.yml), provide only:
 
 - An audio link or file.
 - The reciter's name.
