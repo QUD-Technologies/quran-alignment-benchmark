@@ -285,10 +285,11 @@ def oauth_credentials():
 
 def callback_host(request):
     """The host the visitor signed in from, if it is one of ours; else the Space's own."""
-    space = os.getenv('SPACE_HOST', '')
-    hosts = {h.strip() for h in [space, *os.getenv('QAB_PUBLIC_HOSTS', PUBLIC_HOSTS).split(',')] if h.strip()}
+    # HF sets SPACE_HOST to every host the Space answers on, its own first: "x.hf.space,custom.dev".
+    space = [h.strip() for h in os.getenv('SPACE_HOST', '').split(',') if h.strip()]
+    hosts = {*space, *(h.strip() for h in os.getenv('QAB_PUBLIC_HOSTS', PUBLIC_HOSTS).split(',') if h.strip())}
     host = request.headers.get('x-forwarded-host') or request.headers.get('host', '')
-    return host if host in hosts else space
+    return host if host in hosts else (space[0] if space else None)
 
 
 def create_app(cases_override=None, store_override=None):
