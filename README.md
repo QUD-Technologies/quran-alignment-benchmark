@@ -1,6 +1,9 @@
-# Quran Recitation Alignment Benchmark
+<a href="https://align-bench.qud.dev"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/banner-ink.png">
+  <img alt="Quran Alignment Benchmark: One corpus, one scorer, one leaderboard for systems that align Quran recitation audio to its text." src=".github/banner-paper.png">
+</picture></a>
 
-[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-quran--alignment--benchmark-blue)](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard) [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-green)](https://creativecommons.org/licenses/by/4.0/)
+[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-quran--alignment--benchmark-blue)](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard) [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-green)](https://creativecommons.org/licenses/by/4.0/) [![Discord](https://img.shields.io/badge/Discord-Join-5865f2?logo=discord&logoColor=white)](https://discord.gg/cZ3V2FynXz)
 
 A public benchmark for systems that align Quran recitation audio to the text. Given a recording, a system produces timed segments, each labelled with the exact words recited in it. The benchmark scores those labels against a word-by-word ground truth and publishes the results on a leaderboard.
 
