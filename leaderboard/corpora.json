@@ -2,7 +2,7 @@
   "latest": "v1",
   "versions": {
     "v1": {
-      "dataset": "hetchyy/quran-alignment-benchmark",
+      "dataset": "QUD-Technologies/quran-alignment-benchmark",
       "parquet": "v1/test-00000-of-00001.parquet",
       "metrics": "v1"
     }

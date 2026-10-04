@@ -268,6 +268,27 @@ async def bearer_identity(request: Request) -> tuple[str, str]:
 
 log = logging.getLogger(__name__)
 REFRESH_S = 60  # how often the dataset commit is checked for corpus edits
+PUBLIC_HOSTS = 'align-bench.qud.dev'  # hosts the Space answers on besides its own
+
+
+def oauth_credentials():
+    """The HF OAuth app this deploy signs in with.
+
+    Our own registered app (QAB_OAUTH_* Space secrets): the one `hf_oauth` provisions
+    allow-lists only the Space's *.hf.space host, so sign-in on the custom domain is
+    refused. Its redirect URLs must cover every host in callback_host(). OAUTH_* is
+    still read for local runs and the provisioned app.
+    """
+    return (os.getenv('QAB_OAUTH_CLIENT_ID') or os.getenv('OAUTH_CLIENT_ID'),
+            os.getenv('QAB_OAUTH_CLIENT_SECRET') or os.getenv('OAUTH_CLIENT_SECRET'))
+
+
+def callback_host(request):
+    """The host the visitor signed in from, if it is one of ours; else the Space's own."""
+    space = os.getenv('SPACE_HOST', '')
+    hosts = {h.strip() for h in [space, *os.getenv('QAB_PUBLIC_HOSTS', PUBLIC_HOSTS).split(',')] if h.strip()}
+    host = request.headers.get('x-forwarded-host') or request.headers.get('host', '')
+    return host if host in hosts else space
 
 
 def create_app(cases_override=None, store_override=None):
@@ -308,9 +329,9 @@ def create_app(cases_override=None, store_override=None):
     app.add_middleware(SessionMiddleware, secret_key=secret, https_only=secure,
                        same_site='none' if secure else 'lax', max_age=8 * 3600)
     oauth = OAuth()
-    if os.getenv('OAUTH_CLIENT_ID'):
-        oauth.register('hf', client_id=os.environ['OAUTH_CLIENT_ID'],
-                       client_secret=os.environ['OAUTH_CLIENT_SECRET'],
+    client_id, client_secret = oauth_credentials()
+    if client_id:
+        oauth.register('hf', client_id=client_id, client_secret=client_secret,
                        server_metadata_url='https://huggingface.co/.well-known/openid-configuration',
                        client_kwargs={'scope': 'openid profile', 'code_challenge_method': 'S256'})
 
@@ -396,7 +417,7 @@ def create_app(cases_override=None, store_override=None):
 
     @app.get('/api/session')
     def session(request: Request):
-        return {'signed_in': bool(request.session.get('sub')), 'oauth_available': bool(os.getenv('OAUTH_CLIENT_ID'))}
+        return {'signed_in': bool(request.session.get('sub')), 'oauth_available': bool(client_id)}
 
     @app.post('/api/draft-handoff')
     async def save_handoff(request: Request):
@@ -415,14 +436,14 @@ def create_app(cases_override=None, store_override=None):
 
     @app.get('/auth/login')
     async def login(request: Request, resume: str | None = None):
-        if not os.getenv('OAUTH_CLIENT_ID'):
+        if not client_id:
             raise HTTPException(503, 'Hugging Face sign-in is available on the hosted Space')
         if resume:
             handoffs.get(resume)
             request.session['draft_resume'] = resume
         else:
             request.session.pop('draft_resume', None)
-        host = os.environ.get('SPACE_HOST')
+        host = callback_host(request)
         redirect = f'https://{host}/auth/callback' if host else str(request.url_for('callback'))
         return await oauth.hf.authorize_redirect(request, redirect)
 

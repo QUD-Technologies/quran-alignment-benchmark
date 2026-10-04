@@ -1,6 +1,6 @@
 # Corpus notes (v1)
 
-What the dataset rows contain, how the ground truth was produced, and what v1 does not cover. The dataset lives at [`hetchyy/quran-alignment-benchmark`](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark); one config per corpus version (`v1`), one split (`test`). A config is immutable once a score has been published against it; a re-annotation or an added recording is the next config.
+What the dataset rows contain, how the ground truth was produced, and what v1 does not cover. The dataset lives at [`QUD-Technologies/quran-alignment-benchmark`](https://huggingface.co/datasets/QUD-Technologies/quran-alignment-benchmark); one config per corpus version (`v1`), one split (`test`). A config is immutable once a score has been published against it; a re-annotation or an added recording is the next config.
 
 ## Columns
 

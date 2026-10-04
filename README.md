@@ -7,14 +7,14 @@
   </a>
 </p>
 
-[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-quran--alignment--benchmark-blue)](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard) [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-green)](https://creativecommons.org/licenses/by/4.0/) [![Discord](https://img.shields.io/badge/Discord-Join-5865f2?logo=discord&logoColor=white)](https://discord.gg/cZ3V2FynXz)
+[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-quran--alignment--benchmark-blue)](https://huggingface.co/datasets/QUD-Technologies/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://align-bench.qud.dev) [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-green)](https://creativecommons.org/licenses/by/4.0/) [![Discord](https://img.shields.io/badge/Discord-Join-5865f2?logo=discord&logoColor=white)](https://discord.gg/cZ3V2FynXz)
 
 A public benchmark for systems that align Quran recitation audio to the text. Given a recording, a system produces timed segments, each labelled with the exact words recited in it. The benchmark scores those labels against a word-by-word ground truth and publishes the results on a leaderboard.
 
-- Corpus: [`hetchyy/quran-alignment-benchmark`](https://huggingface.co/datasets/hetchyy/quran-alignment-benchmark) on the Hugging Face Hub (audio, ground truth, descriptive columns)
+- Corpus: [`QUD-Technologies/quran-alignment-benchmark`](https://huggingface.co/datasets/QUD-Technologies/quran-alignment-benchmark) on the Hugging Face Hub (audio, ground truth, descriptive columns)
 - Scorer: this repository, installed from a git tag (package and CLI `qab`)
 - Specification: [docs/SPEC.md](docs/SPEC.md) · Corpus notes: [docs/CORPUS.md](docs/CORPUS.md)
-- Leaderboard: [browse results, dataset, metrics, and submissions](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard)
+- Leaderboard: [browse results, dataset, metrics, and submissions](https://align-bench.qud.dev)
 
 ## The task
 
@@ -179,7 +179,7 @@ Converting your system's output: if its native output is per verse, per word, or
 
 ## How to submit
 
-Use the **Submit** tab in the [leaderboard](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard). Enter your system's name, description, website/repository, private contact email, and the number of result-affecting parameters exposed to intended users. For a demo these are user controls; for a package these are documented options, not internal developer settings. When the count is nonzero, briefly explain how those controls help with different recordings in the description.
+Use the **Submit** tab in the [leaderboard](https://align-bench.qud.dev). Enter your system's name, description, website/repository, private contact email, and the number of result-affecting parameters exposed to intended users. For a demo these are user controls; for a package these are documented options, not internal developer settings. When the count is nonzero, briefly explain how those controls help with different recordings in the description.
 
 Upload a ZIP or individual `<id>.json` prediction files. The website validates each recording and the whole submission, computes a private score preview, and creates the submission metadata and benchmark versions automatically. Website uploads may omit `case_id` and `schema_version`; the filename supplies the ID. The local format above remains supported.
 

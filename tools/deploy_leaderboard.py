@@ -10,8 +10,8 @@ from huggingface_hub import HfApi, bucket_info, get_token
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    space = 'hetchyy/quran-alignment-leaderboard'
-    bucket = 'hetchyy/quran-alignment-leaderboard'
+    space = 'QUD-Technologies/quran-alignment-leaderboard'
+    bucket = 'QUD-Technologies/quran-alignment-leaderboard'
     api = HfApi()
     if not bucket_info(bucket).private:
         raise RuntimeError('Submission bucket must be private')

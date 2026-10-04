@@ -21,7 +21,7 @@ from qab.schema import Case
 from qab.scoring import _truth_repeat_anchors
 
 ROOT = Path(__file__).resolve().parent
-DATASET = "hetchyy/quran-alignment-benchmark"
+DATASET = "QUD-Technologies/quran-alignment-benchmark"
 FORMULA_LOCATION_PREFIX = "0:0:"
 MAX_EDGE_OVERLAP_S = 0.2
 

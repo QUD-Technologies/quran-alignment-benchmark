@@ -242,6 +242,37 @@ def test_sign_in_draft_handoff_is_private_and_expires(client, monkeypatch):
     assert client.post('/api/draft-resume', json={'token': token}).status_code == 410
 
 
+@pytest.mark.parametrize('host, expected', [
+    ('align-bench.qud.dev', 'align-bench.qud.dev'),
+    ('space.hf.space', 'space.hf.space'),
+    ('evil.example', 'space.hf.space'),
+])
+def test_oauth_returns_to_the_host_signed_in_from(tmp_path, monkeypatch, cases, host, expected):
+    from fastapi.responses import RedirectResponse
+    seen = []
+
+    class FakeHF:
+        async def authorize_redirect(self, request, redirect):
+            seen.append(redirect)
+            return RedirectResponse('/fake-hf-consent')
+
+    class FakeOAuth:
+        hf = FakeHF()
+
+        def register(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setattr('leaderboard.app.OAuth', FakeOAuth)
+    monkeypatch.delenv('OAUTH_CLIENT_ID', raising=False)
+    monkeypatch.setenv('QAB_OAUTH_CLIENT_ID', 'test')
+    monkeypatch.setenv('QAB_OAUTH_CLIENT_SECRET', 'test')
+    monkeypatch.setenv('SPACE_HOST', 'space.hf.space')
+    with TestClient(create_app(cases, Store(str(tmp_path)))) as client:
+        assert client.get('/api/session').json()['oauth_available'] is True
+        client.get('/auth/login', headers={'host': host}, follow_redirects=False)
+    assert seen == [f'https://{expected}/auth/callback']
+
+
 @pytest.mark.parametrize('cancelled', [False, True])
 def test_oauth_returns_to_saved_draft(tmp_path, monkeypatch, cases, cancelled):
     from fastapi.responses import RedirectResponse

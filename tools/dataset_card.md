@@ -17,7 +17,7 @@ size_categories:
 
 # Quran Recitation Alignment Benchmark
 
-[![GitHub](https://img.shields.io/badge/GitHub-quran--alignment--benchmark-black?logo=github)](https://github.com/QUD-Technologies/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://huggingface.co/spaces/hetchyy/quran-alignment-leaderboard)
+[![GitHub](https://img.shields.io/badge/GitHub-quran--alignment--benchmark-black?logo=github)](https://github.com/QUD-Technologies/quran-alignment-benchmark) [![Leaderboard](https://img.shields.io/badge/Leaderboard-quran--alignment--leaderboard-blue)](https://align-bench.qud.dev)
 
 Audio recordings of Quran recitation with a reviewed word-level ground truth: every recited word, in the order it was recited, with its start and end time, plus the reviewed segmentation and non-Quran regions. This is the corpus behind the [Quran Recitation Alignment Benchmark](https://github.com/QUD-Technologies/quran-alignment-benchmark); the task, scoring rules, leaderboard and submission format are documented there, not here.
 
@@ -30,7 +30,7 @@ One config per corpus version, one split.
 ```python
 from datasets import load_dataset
 
-ds = load_dataset("hetchyy/quran-alignment-benchmark", "v1", split="test")
+ds = load_dataset("QUD-Technologies/quran-alignment-benchmark", "v1", split="test")
 row = ds[0]
 row["audio"]            # decoded audio; use Audio(decode=False) to get the MP3 bytes instead
 row["truth"]["words"]   # [{"word": "84:1:1", "start_s": 5.78, "end_s": 6.25}, ...]
