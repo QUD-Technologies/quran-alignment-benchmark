@@ -8,6 +8,7 @@ app_port: 7860
 hf_oauth: true
 license: cc-by-4.0
 short_description: Compare Quran recitation alignment systems
+thumbnail: https://qud.dev/og/benchmark.png
 ---
 
 # Quran Alignment Benchmark
